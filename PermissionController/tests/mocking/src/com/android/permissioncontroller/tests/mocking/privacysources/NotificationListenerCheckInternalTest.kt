@@ -20,14 +20,17 @@ import android.app.PendingIntent
 import android.app.job.JobParameters
 import android.content.ComponentName
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.os.Build
 import android.provider.Settings
 import android.safetycenter.SafetyCenterManager
+import android.safetycenter.SafetyEvent
 import android.safetycenter.SafetySourceData
 import android.safetycenter.SafetySourceIssue
+import androidx.core.util.Preconditions
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
@@ -39,18 +42,20 @@ import com.android.permissioncontroller.R
 import com.android.permissioncontroller.permission.utils.Utils
 import com.android.permissioncontroller.privacysources.DisableNotificationListenerComponentHandler
 import com.android.permissioncontroller.privacysources.NotificationListenerActionCardDismissalReceiver
-import com.android.permissioncontroller.privacysources.NotificationListenerCheckJobService
 import com.android.permissioncontroller.privacysources.NotificationListenerCheckInternal
 import com.android.permissioncontroller.privacysources.NotificationListenerCheckInternal.NlsComponent
+import com.android.permissioncontroller.privacysources.NotificationListenerCheckJobService
 import com.android.permissioncontroller.privacysources.SC_NLS_DISABLE_ACTION_ID
+import com.android.permissioncontroller.privacysources.SC_NLS_SOURCE_ID
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mock
-import org.mockito.Mockito.any
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.MockitoAnnotations
@@ -69,7 +74,9 @@ import org.mockito.quality.Strictness
 class NotificationListenerCheckInternalTest {
 
     @Mock
-    lateinit var notificationListenerCheckJobService: NotificationListenerCheckJobService
+    lateinit var mockNotificationListenerCheckJobService: NotificationListenerCheckJobService
+    @Mock
+    lateinit var mockSafetyCenterManager: SafetyCenterManager
 
     private lateinit var context: Context
     private lateinit var mockitoSession: MockitoSession
@@ -85,6 +92,14 @@ class NotificationListenerCheckInternalTest {
         mockitoSession = ExtendedMockito.mockitoSession()
             .spyStatic(Utils::class.java)
             .strictness(Strictness.LENIENT).startMocking()
+
+        // Setup Safety Center
+        doReturn(mockSafetyCenterManager).`when` {
+            Utils.getSystemServiceSafe(
+                any(ContextWrapper::class.java),
+                eq(SafetyCenterManager::class.java)
+            )
+        }
 
         notificationListenerCheck = runWithShellPermissionIdentity {
             NotificationListenerCheckInternal(context) { shouldCancel }
@@ -109,12 +124,12 @@ class NotificationListenerCheckInternalTest {
             runBlocking {
                 notificationListenerCheck.getEnabledNotificationListenersAndNotifyIfNeeded(
                     jobParameters,
-                    notificationListenerCheckJobService
+                    mockNotificationListenerCheckJobService
                 )
             }
         }
 
-        verify(notificationListenerCheckJobService).jobFinished(jobParameters, true)
+        verify(mockNotificationListenerCheckJobService).jobFinished(jobParameters, true)
     }
 
     @Test
@@ -125,12 +140,32 @@ class NotificationListenerCheckInternalTest {
             runBlocking {
                 notificationListenerCheck.getEnabledNotificationListenersAndNotifyIfNeeded(
                     jobParameters,
-                    notificationListenerCheckJobService
+                    mockNotificationListenerCheckJobService
                 )
             }
         }
 
-        verify(notificationListenerCheckJobService).jobFinished(jobParameters, false)
+        verify(mockNotificationListenerCheckJobService).jobFinished(jobParameters, false)
+    }
+
+    @Test
+    fun getEnabledNotificationListenersAndNotifyIfNeeded_sendsDataToSafetyCenter() {
+        val jobParameters = mock(JobParameters::class.java)
+
+        runWithShellPermissionIdentity {
+            runBlocking {
+                notificationListenerCheck.getEnabledNotificationListenersAndNotifyIfNeeded(
+                    jobParameters,
+                    mockNotificationListenerCheckJobService
+                )
+            }
+        }
+
+        verify(mockSafetyCenterManager)
+            .setSafetySourceData(
+                eq(SC_NLS_SOURCE_ID),
+                any(SafetySourceData::class.java),
+                any(SafetyEvent::class.java))
     }
 
     @Test
@@ -382,7 +417,8 @@ class NotificationListenerCheckInternalTest {
                 any(ApplicationInfo::class.java))
         }
 
-        val safetySourceIssue = notificationListenerCheck.createSafetySourceIssue(testComponent)
+        val safetySourceIssue = Preconditions.checkNotNull(
+            notificationListenerCheck.createSafetySourceIssue(testComponent, 0))
 
         val expectedId = "notification_listener_${testComponent.flattenToString()}"
         val expectedTitle = context.getString(

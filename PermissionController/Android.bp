@@ -45,7 +45,10 @@ genrule {
 java_library {
     name: "permissioncontroller-statsd",
     sdk_version: "system_current",
-
+    min_sdk_version: "30",
+    apex_available: [
+        "com.android.permission",
+    ],
     srcs: [
         ":statslog-permissioncontroller-java-gen",
     ],
@@ -132,8 +135,11 @@ android_app {
         "permissioncontroller-statsd",
         "car-ui-lib",
         "libprotobuf-java-lite",
+        "safety-center-internal-data",
         "SettingsLibUtils",
         "modules-utils-build_system",
+        "safety-center-resources-lib",
+        "lottie",
     ],
 
     proto: {
@@ -151,4 +157,9 @@ android_app {
     plugins: ["java_api_finder"],
 
     kotlincflags: ["-Xjvm-default=enable"],
+
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.permission",
+    ],
 }

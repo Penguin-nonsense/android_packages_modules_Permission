@@ -85,6 +85,7 @@ import android.util.TypedValue;
 import android.view.Menu;
 import android.view.MenuItem;
 
+import androidx.annotation.ColorRes;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -101,6 +102,7 @@ import com.android.permissioncontroller.PermissionControllerApplication;
 import com.android.permissioncontroller.R;
 import com.android.permissioncontroller.permission.model.AppPermissionGroup;
 import com.android.permissioncontroller.permission.model.livedatatypes.LightAppPermGroup;
+import com.android.permissioncontroller.permission.model.livedatatypes.LightPackageInfo;
 
 import java.lang.annotation.Retention;
 import java.time.ZonedDateTime;
@@ -182,7 +184,14 @@ public final class Utils {
     public static final String PROPERTY_PERMISSION_EVENTS_CHECK_OLD_FREQUENCY_MILLIS =
             "permission_events_check_old_frequency_millis";
 
-    /** The time an app needs to be unused in order to be hibernated */
+    /**
+     * Whether to store the exact time for permission changes. Only for use in tests and should
+     * not be modified in prod.
+     */
+    public static final String PROPERTY_PERMISSION_CHANGES_STORE_EXACT_TIME =
+            "permission_changes_store_exact_time";
+
+    /** The max amount of time permission data can stay in the storage before being scrubbed */
     public static final String PROPERTY_PERMISSION_DECISIONS_MAX_DATA_AGE_MILLIS =
             "permission_decisions_max_data_age_millis";
 
@@ -227,7 +236,6 @@ public final class Utils {
     private static final ArrayMap<String, Integer> PERM_GROUP_BACKGROUND_REQUEST_DETAIL_RES;
     private static final ArrayMap<String, Integer> PERM_GROUP_UPGRADE_REQUEST_RES;
     private static final ArrayMap<String, Integer> PERM_GROUP_UPGRADE_REQUEST_DETAIL_RES;
-    private static final ArrayMap<String, Integer> PERM_GROUP_CONTINUE_REQUEST_RES;
 
     /** Permission -> Sensor codes */
     private static final ArrayMap<String, Integer> PERM_SENSOR_CODES;
@@ -421,10 +429,6 @@ public final class Utils {
                 .put(CAMERA, R.string.permgroupupgraderequestdetail_camera);
         PERM_GROUP_UPGRADE_REQUEST_DETAIL_RES
                 .put(SENSORS,  R.string.permgroupupgraderequestdetail_sensors);
-
-        PERM_GROUP_CONTINUE_REQUEST_RES = new ArrayMap<>();
-        PERM_GROUP_CONTINUE_REQUEST_RES
-                .put(NOTIFICATIONS, R.string.permgrouprequestcontinue_notifications);
 
         PERM_SENSOR_CODES = new ArrayMap<>();
         if (SdkLevel.isAtLeastS()) {
@@ -848,6 +852,19 @@ public final class Utils {
         return applyTint(context, context.getDrawable(iconResId), attr);
     }
 
+    /**
+     * Get the color resource id based on the attribute
+     *
+     * @return Resource id for the color
+     */
+    @ColorRes
+    public static int getColorResId(Context context, int attr) {
+        Theme theme = context.getTheme();
+        TypedValue typedValue = new TypedValue();
+        theme.resolveAttribute(attr, typedValue, true);
+        return typedValue.resourceId;
+    }
+
     public static List<ApplicationInfo> getAllInstalledApplications(Context context) {
         return context.getPackageManager().getInstalledApplications(0);
     }
@@ -956,6 +973,38 @@ public final class Utils {
                 || (packageInfo.applicationInfo.targetSdkVersion < Build.VERSION_CODES.R
                 && manager.unsafeCheckOpNoThrow(OPSTR_LEGACY_STORAGE,
                 packageInfo.applicationInfo.uid, packageInfo.packageName) == MODE_ALLOWED);
+    }
+
+    /**
+     * Gets whether the STORAGE group should be hidden from the UI for this package. This is true
+     * when the platform is T+, and the package has legacy storage access (i.e., either the package
+     * has a targetSdk less than Q, or has a targetSdk equal to Q and has OPSTR_LEGACY_STORAGE).
+     *
+     * TODO jaysullivan: This is always calling AppOpsManager; not taking advantage of LiveData
+     *
+     * @param pkg The package to check
+     */
+    public static boolean shouldShowStorage(LightPackageInfo pkg) {
+        if (!SdkLevel.isAtLeastT()) {
+            return true;
+        }
+        int targetSdkVersion = pkg.getTargetSdkVersion();
+        PermissionControllerApplication app = PermissionControllerApplication.get();
+        Context context = null;
+        try {
+            context = Utils.getUserContext(app, UserHandle.getUserHandleForUid(pkg.getUid()));
+        } catch (NameNotFoundException e) {
+            return true;
+        }
+        AppOpsManager appOpsManager = context.getSystemService(AppOpsManager.class);
+        if (appOpsManager == null) {
+            return true;
+        }
+
+        return targetSdkVersion < Build.VERSION_CODES.Q
+                || (targetSdkVersion == Build.VERSION_CODES.Q
+                && appOpsManager.unsafeCheckOpNoThrow(OPSTR_LEGACY_STORAGE, pkg.getUid(),
+                pkg.getPackageName()) == MODE_ALLOWED);
     }
 
     /**
@@ -1227,15 +1276,6 @@ public final class Utils {
      */
     public static int getUpgradeRequestDetail(String groupName) {
         return PERM_GROUP_UPGRADE_REQUEST_DETAIL_RES.getOrDefault(groupName, 0);
-    }
-
-    /**
-     * The resource id for the "continue allowing" message for a permission group
-     * @param groupName Permission group name
-     * @return The id or 0 if the permission group doesn't exist or have a message
-     */
-    public static int getContinueRequest(String groupName) {
-        return PERM_GROUP_CONTINUE_REQUEST_RES.getOrDefault(groupName, 0);
     }
 
     /**

@@ -17,73 +17,32 @@
 package com.android.permissioncontroller.safetycenter.ui.model
 
 import android.app.Application
+import android.os.Build
 import android.safetycenter.SafetyCenterData
 import android.safetycenter.SafetyCenterErrorDetails
 import android.safetycenter.SafetyCenterIssue
-import android.safetycenter.SafetyCenterManager
-import androidx.core.content.ContextCompat.getMainExecutor
+import androidx.annotation.RequiresApi
+import androidx.fragment.app.Fragment
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.LiveData
 
-class SafetyCenterViewModel(val app: Application) : AndroidViewModel(app) {
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+abstract class SafetyCenterViewModel(protected val app: Application) : AndroidViewModel(app) {
 
-    val safetyCenterLiveData = SafetyCenterLiveData()
-    val errorLiveData = MutableLiveData<SafetyCenterErrorDetails>()
-    val autoRefreshManager = AutoRefreshManager()
+    abstract val safetyCenterLiveData: LiveData<SafetyCenterData>
+    abstract val errorLiveData: LiveData<SafetyCenterErrorDetails>
 
-    private val safetyCenterManager = app.getSystemService(SafetyCenterManager::class.java)!!
+    abstract fun dismissIssue(issue: SafetyCenterIssue)
 
-    fun dismissIssue(issue: SafetyCenterIssue) {
-        safetyCenterManager.dismissSafetyCenterIssue(issue.id)
-    }
+    abstract fun executeIssueAction(issue: SafetyCenterIssue, action: SafetyCenterIssue.Action)
 
-    fun executeIssueAction(issue: SafetyCenterIssue, action: SafetyCenterIssue.Action) {
-        safetyCenterManager.executeSafetyCenterIssueAction(issue.id, action.id)
-    }
+    abstract fun rescan()
 
-    fun rescan() {
-        safetyCenterManager.refreshSafetySources(
-            SafetyCenterManager.REFRESH_REASON_RESCAN_BUTTON_CLICK)
-    }
+    abstract fun clearError()
 
-    fun clearError() {
-        errorLiveData.value = null
-    }
+    abstract fun navigateToSafetyCenter(fragment: Fragment)
 
-    private fun refresh() {
-        safetyCenterManager.refreshSafetySources(SafetyCenterManager.REFRESH_REASON_PAGE_OPEN)
-    }
+    abstract fun pageOpen()
 
-    inner class SafetyCenterLiveData :
-        MutableLiveData<SafetyCenterData>(), SafetyCenterManager.OnSafetyCenterDataChangedListener {
-
-        override fun onActive() {
-            safetyCenterManager.addOnSafetyCenterDataChangedListener(
-                getMainExecutor(app.applicationContext), this)
-            super.onActive()
-        }
-
-        override fun onInactive() {
-            safetyCenterManager.removeOnSafetyCenterDataChangedListener(this)
-            super.onInactive()
-        }
-
-        override fun onSafetyCenterDataChanged(data: SafetyCenterData) {
-            value = data
-        }
-
-        override fun onError(errorDetails: SafetyCenterErrorDetails) {
-            errorLiveData.value = errorDetails
-        }
-    }
-
-    inner class AutoRefreshManager : DefaultLifecycleObserver {
-        // TODO(b/222323674): We may need to do this in onResume to cover certain edge cases.
-        // i.e. FMD changed from quick settings while SC is open
-        override fun onStart(owner: LifecycleOwner) {
-            refresh()
-        }
-    }
+    abstract fun changingConfigurations()
 }

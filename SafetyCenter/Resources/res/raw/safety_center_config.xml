@@ -16,23 +16,27 @@
 
 <safety-center-config>
     <safety-sources-config>
-        <!-- TODO(b/214567659): Finalize base XML config -->
         <safety-sources-group
             id="AndroidLockScreenSources"
             title="@com.android.safetycenter.resources:string/lock_screen_sources_title"
-            summary="@com.android.safetycenter.resources:string/summary_placeholder">
+            summary="@com.android.safetycenter.resources:string/lock_screen_sources_summary">
             <dynamic-safety-source
                 id="AndroidLockScreen"
                 packageName="com.android.settings"
                 profile="primary_profile_only"
                 title="@com.android.safetycenter.resources:string/lock_screen_title"
                 summary="@com.android.safetycenter.resources:string/lock_screen_summary_disabled"
-                initialDisplayState="disabled"/>
+                searchTerms="@com.android.safetycenter.resources:string/lock_screen_search_terms"
+                initialDisplayState="disabled"
+                refreshOnPageOpenAllowed="true"/>
             <dynamic-safety-source
                 id="AndroidBiometrics"
                 packageName="com.android.settings"
                 profile="primary_profile_only"
-                initialDisplayState="hidden"/>
+                title="@com.android.safetycenter.resources:string/biometrics_title"
+                searchTerms="@com.android.safetycenter.resources:string/biometrics_search_terms"
+                initialDisplayState="hidden"
+                refreshOnPageOpenAllowed="true"/>
         </safety-sources-group>
         <safety-sources-group
             id="AndroidPrivacySources"
@@ -44,52 +48,66 @@
                 profile="primary_profile_only"
                 intentAction="android.intent.action.REVIEW_PERMISSION_USAGE"
                 title="@com.android.safetycenter.resources:string/permission_usage_title"
-                summary="@com.android.safetycenter.resources:string/permission_usage_summary"/>
+                summary="@com.android.safetycenter.resources:string/permission_usage_summary"
+                searchTerms="@com.android.safetycenter.resources:string/permission_usage_search_terms"/>
             <static-safety-source
                 id="AndroidPermissionManager"
                 profile="primary_profile_only"
                 intentAction="android.intent.action.MANAGE_PERMISSIONS"
                 title="@com.android.safetycenter.resources:string/permission_manager_title"
-                summary="@com.android.safetycenter.resources:string/permission_manager_summary"/>
+                summary="@com.android.safetycenter.resources:string/permission_manager_summary"
+                searchTerms="@com.android.safetycenter.resources:string/permission_manager_search_terms"/>
             <static-safety-source
                 id="AndroidPrivacyControls"
                 profile="primary_profile_only"
-                intentAction="TODO"
+                intentAction="android.settings.PRIVACY_CONTROLS"
                 title="@com.android.safetycenter.resources:string/privacy_controls_title"
-                summary="@com.android.safetycenter.resources:string/privacy_controls_summary"/>
+                summary="@com.android.safetycenter.resources:string/privacy_controls_summary"
+                searchTerms="@com.android.safetycenter.resources:string/privacy_controls_search_terms"/>
             <issue-only-safety-source
                 id="AndroidAccessibility"
-                packageName="com.google.android.permissioncontroller"
-                profile="primary_profile_only"/>
+                packageName="com.android.permissioncontroller"
+                profile="all_profiles"
+                refreshOnPageOpenAllowed="true"/>
             <issue-only-safety-source
                 id="AndroidNotificationListener"
-                packageName="com.google.android.permissioncontroller"
-                profile="primary_profile_only"/>
+                packageName="com.android.permissioncontroller"
+                profile="primary_profile_only"
+                refreshOnPageOpenAllowed="true"/>
             <issue-only-safety-source
                 id="AndroidBackgroundLocation"
-                packageName="com.google.android.permissioncontroller"
-                profile="primary_profile_only"/>
+                packageName="com.android.permissioncontroller"
+                profile="all_profiles"
+                refreshOnPageOpenAllowed="true"/>
+            <issue-only-safety-source
+                id="AndroidPermissionAutoRevoke"
+                packageName="com.android.permissioncontroller"
+                profile="all_profiles"
+                refreshOnPageOpenAllowed="true"/>
         </safety-sources-group>
         <safety-sources-group
             id="AndroidAdvancedSources"
             title="@com.android.safetycenter.resources:string/advanced_title">
             <dynamic-safety-source
                 id="AndroidWorkPolicyInfo"
-                packageName="com.google.android.permissioncontroller"
+                packageName="com.android.permissioncontroller"
                 profile="primary_profile_only"
-                initialDisplayState="hidden"/>
+                initialDisplayState="hidden"
+                refreshOnPageOpenAllowed="true"/>
             <static-safety-source
                 id="AndroidAdvancedSecurity"
                 profile="primary_profile_only"
                 intentAction="com.android.settings.security.SECURITY_ADVANCED_SETTINGS"
                 title="@com.android.safetycenter.resources:string/advanced_security_title"
-                summary="@com.android.safetycenter.resources:string/advanced_security_summary"/>
+                summary="@com.android.safetycenter.resources:string/advanced_security_summary"
+                searchTerms="@com.android.safetycenter.resources:string/advanced_security_search_terms"/>
             <static-safety-source
                 id="AndroidAdvancedPrivacy"
                 profile="primary_profile_only"
-                intentAction="TODO"
+                intentAction="android.settings.PRIVACY_ADVANCED_SETTINGS"
                 title="@com.android.safetycenter.resources:string/advanced_privacy_title"
-                summary="@com.android.safetycenter.resources:string/advanced_privacy_summary"/>
+                summary="@com.android.safetycenter.resources:string/advanced_privacy_summary"
+                searchTerms="@com.android.safetycenter.resources:string/advanced_privacy_search_terms"/>
         </safety-sources-group>
     </safety-sources-config>
 </safety-center-config>

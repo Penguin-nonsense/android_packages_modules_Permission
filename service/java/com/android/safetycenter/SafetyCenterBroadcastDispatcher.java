@@ -50,28 +50,17 @@ import android.safetycenter.SafetyCenterManager.RefreshRequestType;
 import androidx.annotation.RequiresApi;
 
 import com.android.safetycenter.SafetyCenterConfigReader.Broadcast;
-import com.android.safetycenter.SafetyCenterConfigReader.SafetyCenterConfigInternal;
 
 import java.time.Duration;
 import java.util.List;
 
 /**
- * Class to manage and track broadcasts sent by {@link SafetyCenterService}.
+ * A class that dispatches SafetyCenter broadcasts.
  *
  * <p>This class is thread safe as it does not contain any mutable state.
  */
 @RequiresApi(TIRAMISU)
 final class SafetyCenterBroadcastDispatcher {
-
-    private static final String TAG = "SafetyCenterBroadcastDi";
-
-    /**
-     * Time for which an app, upon receiving a particular broadcast, will be placed on a temporary
-     * power allowlist allowing it to start a foreground service from the background.
-     */
-    // TODO(b/219553295): Use a Device Config value instead, so that this duration can be
-    //  easily adjusted.
-    private static final Duration ALLOWLIST_DURATION = Duration.ofSeconds(20);
 
     @NonNull private final Context mContext;
 
@@ -85,19 +74,17 @@ final class SafetyCenterBroadcastDispatcher {
      * SafetyCenterManager#ACTION_REFRESH_SAFETY_SOURCES}.
      */
     void sendRefreshSafetySources(
-            @NonNull SafetyCenterConfigInternal configInternal,
+            @NonNull List<Broadcast> broadcasts,
             @NonNull String broadcastId,
             @RefreshReason int refreshReason,
             @NonNull UserProfileGroup userProfileGroup) {
-        List<Broadcast> broadcasts = configInternal.getBroadcasts();
-        int requestType = toRefreshRequestType(refreshReason);
         BroadcastOptions broadcastOptions = createBroadcastOptions();
 
         for (int i = 0; i < broadcasts.size(); i++) {
             Broadcast broadcast = broadcasts.get(i);
 
             sendRefreshSafetySourcesBroadcast(
-                    broadcast, broadcastOptions, requestType, userProfileGroup, broadcastId);
+                    broadcast, broadcastOptions, refreshReason, userProfileGroup, broadcastId);
         }
     }
 
@@ -110,23 +97,53 @@ final class SafetyCenterBroadcastDispatcher {
      */
     // TODO(b/227310195): Consider adding a boolean extra to the intent instead of having clients
     //  rely on SafetyCenterManager#isSafetyCenterEnabled()?
-    void sendEnabledChanged(@NonNull SafetyCenterConfigInternal configInternal) {
-        List<Broadcast> broadcasts = configInternal.getBroadcasts();
+    void sendEnabledChanged(@NonNull List<Broadcast> broadcasts) {
         BroadcastOptions broadcastOptions = createBroadcastOptions();
+        List<UserProfileGroup> userProfileGroups =
+                UserProfileGroup.getAllUserProfileGroups(mContext);
 
         for (int i = 0; i < broadcasts.size(); i++) {
             Broadcast broadcast = broadcasts.get(i);
+            Intent broadcastIntent =
+                    createEnabledChangedBroadcastIntent(broadcast.getPackageName());
 
-            sendBroadcast(
-                    createEnabledChangedBroadcastIntent(broadcast.getPackageName()),
-                    UserHandle.ALL,
-                    SEND_SAFETY_CENTER_UPDATE,
-                    broadcastOptions);
+            for (int j = 0; j < userProfileGroups.size(); j++) {
+                UserProfileGroup userProfileGroup = userProfileGroups.get(j);
+
+                List<String> profileParentSourceIds =
+                        broadcast.getSourceIdsForProfileParent(
+                                REFRESH_REASON_SAFETY_CENTER_ENABLED);
+                if (!profileParentSourceIds.isEmpty()) {
+                    int profileParentUserId = userProfileGroup.getProfileParentUserId();
+
+                    sendBroadcast(
+                            broadcastIntent,
+                            UserHandle.of(profileParentUserId),
+                            SEND_SAFETY_CENTER_UPDATE,
+                            broadcastOptions);
+                }
+
+                List<String> managedProfilesSourceIds =
+                        broadcast.getSourceIdsForManagedProfiles(
+                                REFRESH_REASON_SAFETY_CENTER_ENABLED);
+                if (!managedProfilesSourceIds.isEmpty()) {
+                    int[] managedRunningProfilesUserIds =
+                            userProfileGroup.getManagedRunningProfilesUserIds();
+                    for (int k = 0; k < managedRunningProfilesUserIds.length; k++) {
+                        int managedRunningProfileUserId = managedRunningProfilesUserIds[k];
+                        sendBroadcast(
+                                broadcastIntent,
+                                UserHandle.of(managedRunningProfileUserId),
+                                SEND_SAFETY_CENTER_UPDATE,
+                                broadcastOptions);
+                    }
+                }
+            }
         }
 
         sendBroadcast(
                 createEnabledChangedBroadcastIntent(),
-                UserHandle.ALL,
+                UserHandle.SYSTEM,
                 READ_SAFETY_CENTER_STATUS,
                 null);
     }
@@ -134,37 +151,43 @@ final class SafetyCenterBroadcastDispatcher {
     private void sendRefreshSafetySourcesBroadcast(
             @NonNull Broadcast broadcast,
             @NonNull BroadcastOptions broadcastOptions,
-            @RefreshRequestType int requestType,
+            @RefreshReason int refreshReason,
             @NonNull UserProfileGroup userProfileGroup,
             @NonNull String broadcastId) {
-        if (!broadcast.getSourceIdsForProfileOwner().isEmpty()) {
-            int profileOwnerUserId = userProfileGroup.getProfileOwnerUserId();
+        int requestType = toRefreshRequestType(refreshReason);
+        List<String> profileParentSourceIds = broadcast.getSourceIdsForProfileParent(refreshReason);
+        if (!profileParentSourceIds.isEmpty()) {
+            int profileParentUserId = userProfileGroup.getProfileParentUserId();
             Intent broadcastIntent =
                     createRefreshSafetySourcesBroadcastIntent(
                             requestType,
                             broadcast.getPackageName(),
-                            broadcast.getSourceIdsForProfileOwner(),
+                            profileParentSourceIds,
                             broadcastId);
+
             sendBroadcast(
                     broadcastIntent,
-                    UserHandle.of(profileOwnerUserId),
+                    UserHandle.of(profileParentUserId),
                     SEND_SAFETY_CENTER_UPDATE,
                     broadcastOptions);
         }
-        if (!broadcast.getSourceIdsForManagedProfiles().isEmpty()) {
-            int[] managedProfileUserIds = userProfileGroup.getManagedProfilesUserIds();
-            for (int i = 0; i < managedProfileUserIds.length; i++) {
-                int managedProfileUserId = managedProfileUserIds[i];
+        List<String> managedProfilesSourceIds =
+                broadcast.getSourceIdsForManagedProfiles(refreshReason);
+        if (!managedProfilesSourceIds.isEmpty()) {
+            int[] managedRunningProfilesUserIds =
+                    userProfileGroup.getManagedRunningProfilesUserIds();
+            for (int i = 0; i < managedRunningProfilesUserIds.length; i++) {
+                int managedRunningProfilesUserId = managedRunningProfilesUserIds[i];
                 Intent broadcastIntent =
                         createRefreshSafetySourcesBroadcastIntent(
                                 requestType,
                                 broadcast.getPackageName(),
-                                broadcast.getSourceIdsForManagedProfiles(),
+                                managedProfilesSourceIds,
                                 broadcastId);
 
                 sendBroadcast(
                         broadcastIntent,
-                        UserHandle.of(managedProfileUserId),
+                        UserHandle.of(managedRunningProfilesUserId),
                         SEND_SAFETY_CENTER_UPDATE,
                         broadcastOptions);
             }
@@ -221,12 +244,12 @@ final class SafetyCenterBroadcastDispatcher {
     @NonNull
     private static BroadcastOptions createBroadcastOptions() {
         BroadcastOptions broadcastOptions = BroadcastOptions.makeBasic();
-        // The following operation requires the START_FOREGROUND_SERVICES_FROM_BACKGROUND
-        // permission.
+        Duration allowListDuration = SafetyCenterFlags.getFgsAllowlistDuration();
+        // The following operation requires the START_FOREGROUND_SERVICES_FROM_BACKGROUND.
         final long callingId = Binder.clearCallingIdentity();
         try {
             broadcastOptions.setTemporaryAppAllowlist(
-                    ALLOWLIST_DURATION.toMillis(),
+                    allowListDuration.toMillis(),
                     TEMPORARY_ALLOW_LIST_TYPE_FOREGROUND_SERVICE_ALLOWED,
                     REASON_REFRESH_SAFETY_SOURCES,
                     "Safety Center is requesting data from safety sources");
@@ -248,6 +271,6 @@ final class SafetyCenterBroadcastDispatcher {
             case REFRESH_REASON_OTHER:
                 return EXTRA_REFRESH_REQUEST_TYPE_GET_DATA;
         }
-        throw new IllegalArgumentException("Invalid refresh reason: " + refreshReason);
+        throw new IllegalArgumentException("Unexpected refresh reason: " + refreshReason);
     }
 }

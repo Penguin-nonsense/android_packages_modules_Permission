@@ -33,7 +33,6 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
-import android.os.UserManager
 import android.provider.DeviceConfig
 import android.provider.Settings
 import android.safetycenter.SafetyCenterManager
@@ -41,9 +40,10 @@ import android.safetycenter.SafetyEvent
 import android.safetycenter.SafetySourceData
 import android.safetycenter.SafetySourceIssue
 import android.service.notification.StatusBarNotification
-import android.util.ArraySet
+import android.text.Html
 import android.util.Log
 import android.view.accessibility.AccessibilityManager
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.annotation.GuardedBy
 import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
@@ -51,40 +51,42 @@ import androidx.annotation.WorkerThread
 import androidx.core.util.Preconditions
 import com.android.modules.utils.build.SdkLevel
 import com.android.permissioncontroller.Constants
+import com.android.permissioncontroller.PermissionControllerStatsLog
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION__ACTION__CARD_DISMISSED
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION__ACTION__CLICKED_CTA1
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION__PRIVACY_SOURCE__A11Y_SERVICE
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_NOTIFICATION_INTERACTION
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__ACTION__DISMISSED
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__ACTION__NOTIFICATION_SHOWN
+import com.android.permissioncontroller.PermissionControllerStatsLog.PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__PRIVACY_SOURCE__A11Y_SERVICE
+import com.android.permissioncontroller.R
 import com.android.permissioncontroller.permission.utils.Utils
 import com.android.permissioncontroller.permission.utils.Utils.getSystemServiceSafe
-import com.android.permissioncontroller.R
+import com.android.permissioncontroller.privacysources.SafetyCenterReceiver.RefreshEvent
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.BufferedWriter
-import java.io.FileNotFoundException
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.util.Random
 import java.util.concurrent.TimeUnit
 import java.util.function.BooleanSupplier
 
 @VisibleForTesting
 const val PROPERTY_SC_ACCESSIBILITY_SOURCE_ENABLED = "sc_accessibility_source_enabled"
+const val PROPERTY_SC_ACCESSIBILITY_LISTENER_ENABLED = "sc_accessibility_listener_enabled"
 const val SC_ACCESSIBILITY_SOURCE_ID = "AndroidAccessibility"
 const val SC_ACCESSIBILITY_REMOVE_ACCESS_ACTION_ID =
     "revoke_accessibility_app_access"
+private const val DEBUG = false
 
+@ChecksSdkIntAtLeast(api = Build.VERSION_CODES.TIRAMISU)
 private fun isAccessibilitySourceSupported(): Boolean {
     return SdkLevel.isAtLeastT()
-}
-
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private fun isProfile(context: Context): Boolean {
-    val userManager = getSystemServiceSafe(context, UserManager::class.java)
-    return userManager.isProfile
 }
 
 fun isAccessibilitySourceEnabled(): Boolean {
@@ -92,6 +94,17 @@ fun isAccessibilitySourceEnabled(): Boolean {
         DeviceConfig.NAMESPACE_PRIVACY,
         PROPERTY_SC_ACCESSIBILITY_SOURCE_ENABLED,
         false
+    )
+}
+
+/**
+ * cts test needs to disable the listener.
+ */
+fun isAccessibilityListenerEnabled(): Boolean {
+    return DeviceConfig.getBoolean(
+        DeviceConfig.NAMESPACE_PRIVACY,
+        PROPERTY_SC_ACCESSIBILITY_LISTENER_ENABLED,
+        true
     )
 }
 
@@ -115,6 +128,10 @@ class AccessibilitySourceService(
         NotificationManager::class.java)
     private val safetyCenterManager = getSystemServiceSafe(parentUserContext,
         SafetyCenterManager::class.java)
+    private val a11yDataFile = parentUserContext.getFileStreamPath(
+        Constants.ACCESSIBILITY_SERVICES_ALREADY_NOTIFIED_FILE)
+
+    private val storageService = TextStorageRepository(a11yDataFile)
 
     @WorkerThread
     internal suspend fun processAccessibilityJob(
@@ -124,9 +141,19 @@ class AccessibilitySourceService(
     ) {
         lock.withLock {
             try {
+                var sessionId = Constants.INVALID_SESSION_ID
+                while (sessionId == Constants.INVALID_SESSION_ID) {
+                    sessionId = random.nextLong()
+                }
+                if (DEBUG) {
+                    Log.v(LOG_TAG, "safety center accessibility privacy job started.")
+                }
                 interruptJobIfCanceled(cancel)
                 val a11yServiceList = getEnabledAccessibilityServices()
                 if (a11yServiceList.isEmpty()) {
+                    if (DEBUG) {
+                        Log.v(LOG_TAG, "accessibility services not enabled, job completed.")
+                    }
                     jobService.jobFinished(params, false)
                     jobService.clearJob()
                     return
@@ -150,18 +177,19 @@ class AccessibilitySourceService(
                     }
 
                     if (toBeNotifiedServices.isNotEmpty()) {
-                        val serviceToBeNotified =
+                        if (DEBUG) {
+                            Log.v(LOG_TAG, "sending an accessibility service notification")
+                        }
+                        val serviceToBeNotified: AccessibilityServiceInfo =
                             toBeNotifiedServices[random.nextInt(toBeNotifiedServices.size)]
-                        val pkgLabel = serviceToBeNotified.resolveInfo.loadLabel(packageManager)
-                        val component = ComponentName.unflattenFromString(serviceToBeNotified.id)!!
                         createPermissionReminderChannel()
                         interruptJobIfCanceled(cancel)
-                        sendNotification(pkgLabel, component)
+                        sendNotification(serviceToBeNotified, sessionId)
                     }
                 }
 
                 interruptJobIfCanceled(cancel)
-                sendIssuesToSafetyCenter(a11yServiceList)
+                sendIssuesToSafetyCenter(a11yServiceList, sessionId)
                 jobService.jobFinished(params, false)
             } catch (ex: InterruptedException) {
                 Log.w(LOG_TAG, "cancel request for safety center accessibility job received.")
@@ -179,18 +207,18 @@ class AccessibilitySourceService(
      * sends a notification for a given accessibility package
      */
     private suspend fun sendNotification(
-        pkgLabel: CharSequence,
-        componentName: ComponentName
+        serviceToBeNotified: AccessibilityServiceInfo,
+        sessionId: Long
     ) {
-        var sessionId = Constants.INVALID_SESSION_ID
-        while (sessionId == Constants.INVALID_SESSION_ID) {
-            sessionId = random.nextLong()
-        }
+        val pkgLabel = serviceToBeNotified.resolveInfo.loadLabel(packageManager)
+        val componentName = ComponentName.unflattenFromString(serviceToBeNotified.id)!!
+        val uid = serviceToBeNotified.resolveInfo.serviceInfo.applicationInfo.uid
 
         val notificationDeleteIntent =
             Intent(parentUserContext, AccessibilityNotificationDeleteHandler::class.java).apply {
                 putExtra(Intent.EXTRA_COMPONENT_NAME, componentName)
                 putExtra(Constants.EXTRA_SESSION_ID, sessionId)
+                putExtra(Intent.EXTRA_UID, uid)
                 flags = Intent.FLAG_RECEIVER_FOREGROUND
                 identifier = componentName.flattenToString()
             }
@@ -203,6 +231,7 @@ class AccessibilitySourceService(
             pkgLabel
         )
 
+        val notificationResource = getNotificationResource()
         val b: Notification.Builder =
             Notification.Builder(parentUserContext, Constants.PERMISSION_REMINDER_CHANNEL_ID)
                 .setLocalOnly(true)
@@ -210,8 +239,8 @@ class AccessibilitySourceService(
                 .setContentText(summary)
                 // Ensure entire text can be displayed, instead of being truncated to one line
                 .setStyle(Notification.BigTextStyle().bigText(summary))
-                .setSmallIcon(android.R.drawable.ic_safety_protection)
-                .setColor(parentUserContext.getColor(R.color.safety_center_info))
+                .setSmallIcon(notificationResource.smallIconResId)
+                .setColor(context.getColor(notificationResource.colorResId))
                 .setAutoCancel(true)
                 .setDeleteIntent(
                     PendingIntent.getBroadcast(
@@ -220,12 +249,12 @@ class AccessibilitySourceService(
                             PendingIntent.FLAG_IMMUTABLE
                     )
                 )
-                .setContentIntent(getSafetyCenterActivityIntent(context))
+                .setContentIntent(getSafetyCenterActivityIntent(context, uid, sessionId))
 
-        val appName = parentUserContext.getString(android.R.string.safety_protection_display_text)
-        val extras = Bundle()
-        extras.putString(Notification.EXTRA_SUBSTITUTE_APP_NAME, appName)
-        b.addExtras(extras)
+        val appNameExtras = Bundle()
+        appNameExtras.putString(Notification.EXTRA_SUBSTITUTE_APP_NAME,
+            notificationResource.appLabel)
+        b.addExtras(appNameExtras)
 
         notificationsManager.notify(
             componentName.toShortString(),
@@ -239,6 +268,38 @@ class AccessibilitySourceService(
             KEY_LAST_ACCESSIBILITY_NOTIFICATION_SHOWN,
             System.currentTimeMillis()
         ).apply()
+
+        if (DEBUG) {
+            Log.v(LOG_TAG, "NOTIF_INTERACTION SEND metric, uid $uid session $sessionId")
+        }
+        PermissionControllerStatsLog.write(
+            PRIVACY_SIGNAL_NOTIFICATION_INTERACTION,
+            PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__PRIVACY_SOURCE__A11Y_SERVICE,
+            uid,
+            PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__ACTION__NOTIFICATION_SHOWN,
+            sessionId
+        )
+    }
+
+    class NotificationResource(val appLabel: String, val smallIconResId: Int, val colorResId: Int)
+
+    private fun getNotificationResource(): NotificationResource {
+        // Use PbA branding if available, otherwise default to more generic branding
+        val pbaLabel = Html.fromHtml(parentUserContext.getString(
+                android.R.string.safety_protection_display_text), 0)
+        val appLabel: String
+        val smallIconResId: Int
+        val colorResId: Int
+        if (pbaLabel != null && pbaLabel.isNotEmpty()) {
+            appLabel = pbaLabel.toString()
+            smallIconResId = android.R.drawable.ic_safety_protection
+            colorResId = R.color.safety_center_info
+        } else {
+            appLabel = parentUserContext.getString(R.string.safety_center_notification_app_label)
+            smallIconResId = R.drawable.ic_settings_notification
+            colorResId = android.R.color.system_notification_accent_color
+        }
+        return NotificationResource(appLabel, smallIconResId, colorResId)
     }
 
     /** Create the channel for a11y notifications */
@@ -255,14 +316,21 @@ class AccessibilitySourceService(
      * @param a11yService enabled 3rd party accessibility service
      * @return safety source issue, shown as the warning card in safety center
      */
-    private fun createSafetySourceIssue(a11yService: AccessibilityServiceInfo): SafetySourceIssue {
+    private fun createSafetySourceIssue(
+        a11yService: AccessibilityServiceInfo,
+        sessionId: Long
+    ): SafetySourceIssue {
         val componentName = ComponentName.unflattenFromString(a11yService.id)!!
         val safetySourceIssueId = "accessibility_${componentName.flattenToString()}"
         val pkgLabel = a11yService.resolveInfo.loadLabel(packageManager).toString()
+        val uid = a11yService.resolveInfo.serviceInfo.applicationInfo.uid
+
         val removeAccessPendingIntent = getRemoveAccessPendingIntent(
             context,
             componentName,
-            safetySourceIssueId
+            safetySourceIssueId,
+            uid,
+            sessionId
         )
 
         val removeAccessAction = SafetySourceIssue.Action.Builder(
@@ -275,7 +343,8 @@ class AccessibilitySourceService(
                 R.string.accessibility_remove_access_success_label))
             .build()
 
-        val accessibilityActivityPendingIntent = getAccessibilityActivityPendingIntent(context)
+        val accessibilityActivityPendingIntent =
+            getAccessibilityActivityPendingIntent(context, uid, sessionId)
 
         val accessibilityActivityAction = SafetySourceIssue.Action.Builder(
             SC_ACCESSIBILITY_SHOW_ACCESSIBILITY_ACTIVITY_ACTION_ID,
@@ -288,7 +357,10 @@ class AccessibilitySourceService(
                 flags = Intent.FLAG_RECEIVER_FOREGROUND
                 identifier = componentName.flattenToString()
                 putExtra(Intent.EXTRA_COMPONENT_NAME, componentName)
+                putExtra(Constants.EXTRA_SESSION_ID, sessionId)
+                putExtra(Intent.EXTRA_UID, uid)
             }
+
         val warningCardDismissPendingIntent = PendingIntent.getBroadcast(
             parentUserContext, 0, warningCardDismissIntent,
             PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_UPDATE_CURRENT or
@@ -320,12 +392,16 @@ class AccessibilitySourceService(
     private fun getRemoveAccessPendingIntent(
         context: Context,
         serviceComponentName: ComponentName,
-        safetySourceIssueId: String
+        safetySourceIssueId: String,
+        uid: Int,
+        sessionId: Long
     ): PendingIntent {
         val intent =
             Intent(parentUserContext, AccessibilityRemoveAccessHandler::class.java).apply {
                 putExtra(Intent.EXTRA_COMPONENT_NAME, serviceComponentName)
                 putExtra(SafetyCenterManager.EXTRA_SAFETY_SOURCE_ISSUE_ID, safetySourceIssueId)
+                putExtra(Constants.EXTRA_SESSION_ID, sessionId)
+                putExtra(Intent.EXTRA_UID, uid)
                 flags = Intent.FLAG_RECEIVER_FOREGROUND
                 identifier = serviceComponentName.flattenToString()
             }
@@ -341,28 +417,63 @@ class AccessibilitySourceService(
     /**
      * @return pending intent for redirecting user to the accessibility page
      */
-    private fun getAccessibilityActivityPendingIntent(context: Context): PendingIntent {
+    private fun getAccessibilityActivityPendingIntent(
+        context: Context,
+        uid: Int,
+        sessionId: Long
+    ): PendingIntent {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        intent.putExtra(Constants.EXTRA_SESSION_ID, sessionId)
+        intent.putExtra(Intent.EXTRA_UID, uid)
         return PendingIntent.getActivity(
             context,
             0,
             intent,
-            PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
     }
 
     /**
      * @return pending intent to redirect the user to safety center on notification click
      */
-    private fun getSafetyCenterActivityIntent(context: Context): PendingIntent {
+    private fun getSafetyCenterActivityIntent(
+        context: Context,
+        uid: Int,
+        sessionId: Long
+    ): PendingIntent {
         val intent = Intent(Intent.ACTION_SAFETY_CENTER)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        intent.putExtra(Constants.EXTRA_SESSION_ID, sessionId)
+        intent.putExtra(Intent.EXTRA_UID, uid)
+        intent.putExtra(
+            Constants.EXTRA_PRIVACY_SOURCE,
+            PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__PRIVACY_SOURCE__A11Y_SERVICE
+        )
         return PendingIntent.getActivity(
             context,
             0,
             intent,
-            PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
+    private fun sendIssuesToSafetyCenter(
+        a11yServiceList: List<AccessibilityServiceInfo>,
+        sessionId: Long,
+        safetyEvent: SafetyEvent = sourceStateChanged
+    ) {
+        val pendingIssues = a11yServiceList.map { createSafetySourceIssue(it, sessionId) }
+        val dataBuilder = SafetySourceData.Builder()
+        pendingIssues.forEach { dataBuilder.addIssue(it) }
+        val safetySourceData = dataBuilder.build()
+        if (DEBUG) {
+            Log.v(LOG_TAG, "sending ${pendingIssues.size} issue to sc, data: $safetySourceData")
+        }
+        safetyCenterManager.setSafetySourceData(
+            SC_ACCESSIBILITY_SOURCE_ID,
+            safetySourceData,
+            safetyEvent
         )
     }
 
@@ -370,16 +481,11 @@ class AccessibilitySourceService(
         a11yServiceList: List<AccessibilityServiceInfo>,
         safetyEvent: SafetyEvent = sourceStateChanged
     ) {
-        val pendingIssues = a11yServiceList.map { createSafetySourceIssue(it) }
-        val dataBuilder = SafetySourceData.Builder()
-        pendingIssues.forEach { dataBuilder.addIssue(it) }
-        val safetySourceData = dataBuilder.build()
-
-        safetyCenterManager.setSafetySourceData(
-            SC_ACCESSIBILITY_SOURCE_ID,
-            safetySourceData,
-            safetyEvent
-        )
+        var sessionId = Constants.INVALID_SESSION_ID
+        while (sessionId == Constants.INVALID_SESSION_ID) {
+            sessionId = random.nextLong()
+        }
+        sendIssuesToSafetyCenter(a11yServiceList, sessionId, safetyEvent)
     }
 
     fun sendIssuesToSafetyCenter(safetyEvent: SafetyEvent = sourceStateChanged) {
@@ -443,7 +549,7 @@ class AccessibilitySourceService(
                     notificationShownTime = System.currentTimeMillis()
                 )
         notifiedComponentsMap[componentName] = componentToMarkNotified
-        persistNotifiedComponentsLocked(notifiedComponentsMap.values)
+        persistNotifiedComponentsLocked(notifiedComponentsMap.values.toList())
     }
 
     /**
@@ -453,57 +559,9 @@ class AccessibilitySourceService(
      */
     @WorkerThread
     @VisibleForTesting
-    internal suspend fun loadNotifiedComponentsLocked(): ArraySet<AccessibilityComponent> {
+    internal suspend fun loadNotifiedComponentsLocked(): List<AccessibilityComponent> {
         return withContext(Dispatchers.IO) {
-            try {
-                BufferedReader(
-                    InputStreamReader(
-                        parentUserContext.openFileInput(
-                            Constants.ACCESSIBILITY_SERVICES_ALREADY_NOTIFIED_FILE
-                        )
-                    )
-                ).use { reader ->
-                    val accessibilityComponents = ArraySet<AccessibilityComponent>()
-
-                    /*
-                     * The format of the file is
-                     * <flattened component> <time of notification> <time resolved>
-                     * e.g.
-                     *
-                     * com.one.package/Class 1234567890 1234567890
-                     * com.two.package/Class 1234567890 1234567890
-                     * com.three.package/Class 1234567890 1234567890
-                     */
-                    while (true) {
-                        val line = reader.readLine() ?: break
-                        val lineComponents = line.split(" ".toRegex()).toTypedArray()
-                        val componentName = ComponentName.unflattenFromString(lineComponents[0])
-                        val notificationShownTime: Long = lineComponents[1].toLong()
-                        val signalResolvedTime: Long = lineComponents[2].toLong()
-                        if (componentName != null) {
-                            accessibilityComponents.add(
-                                AccessibilityComponent(
-                                    componentName,
-                                    notificationShownTime,
-                                    signalResolvedTime
-                                )
-                            )
-                        } else {
-                            Log.w(LOG_TAG, "Not restoring state \"$line\" as component is unknown")
-                        }
-                    }
-                    return@withContext accessibilityComponents
-                }
-            } catch (ignored: FileNotFoundException) {
-                return@withContext ArraySet<AccessibilityComponent>()
-            } catch (e: Exception) {
-                Log.w(
-                    LOG_TAG,
-                    "Could not read ${Constants.ACCESSIBILITY_SERVICES_ALREADY_NOTIFIED_FILE}",
-                    e
-                )
-                return@withContext ArraySet<AccessibilityComponent>()
-            }
+            storageService.readData(a11yDataCreator)
         }
     }
 
@@ -514,43 +572,10 @@ class AccessibilitySourceService(
      */
     @WorkerThread
     private suspend fun persistNotifiedComponentsLocked(
-        accessibilityComponents: Collection<AccessibilityComponent>
+        accessibilityComponents: List<AccessibilityComponent>
     ) {
         withContext(Dispatchers.IO) {
-            try {
-                BufferedWriter(
-                    OutputStreamWriter(
-                        parentUserContext.openFileOutput(
-                            Constants.ACCESSIBILITY_SERVICES_ALREADY_NOTIFIED_FILE,
-                            Context.MODE_PRIVATE
-                        )
-                    )
-                ).use { writer ->
-                    /*
-                     * The format of the file is
-                     * <flattened component> <time of notification> <time resolved>
-                     * e.g.
-                     *
-                     * com.one.package/Class 1234567890 1234567890
-                     * com.two.package/Class 1234567890 1234567890
-                     * com.three.package/Class 1234567890 1234567890
-                     */
-                    for (component in accessibilityComponents) {
-                        writer.append(component.componentName.flattenToString())
-                            .append(' ')
-                            .append(component.notificationShownTime.toString())
-                            .append(' ')
-                            .append(component.signalResolvedTime.toString())
-                        writer.newLine()
-                    }
-                }
-            } catch (e: IOException) {
-                Log.e(
-                    LOG_TAG,
-                    "Could not write to ${Constants.ACCESSIBILITY_SERVICES_ALREADY_NOTIFIED_FILE}",
-                    e
-                )
-            }
+            storageService.persistData(accessibilityComponents)
         }
     }
 
@@ -635,6 +660,15 @@ class AccessibilitySourceService(
         /** lock for processing a job */
         private val lock = Mutex()
 
+        private val a11yDataCreator = object : PrivacySourceData.Creator<AccessibilityComponent> {
+            override fun fromStorageData(data: String): AccessibilityComponent {
+                val components = data.split(" ")
+                val a11yService = ComponentName.unflattenFromString(components[0])!!
+                val notificationShownTime: Long = components[1].toLong()
+                return AccessibilityComponent(a11yService, notificationShownTime)
+            }
+        }
+
         /**
          * Get time in between two periodic checks.
          *
@@ -690,6 +724,8 @@ class AccessibilitySourceService(
         }
     }
 
+    override val shouldProcessProfileRequest: Boolean = false
+
     override fun safetyCenterEnabledChanged(context: Context, enabled: Boolean) {
         if (!enabled) { // safety center disabled event
             removeAccessibilityNotification()
@@ -699,27 +735,29 @@ class AccessibilitySourceService(
     override fun rescanAndPushSafetyCenterData(
         context: Context,
         intent: Intent,
-        refreshEvent: SafetyCenterReceiver.RefreshEvent
+        refreshEvent: RefreshEvent
     ) {
-        val refreshBroadcastId = intent.getStringExtra(
-            SafetyCenterManager.EXTRA_REFRESH_SAFETY_SOURCES_BROADCAST_ID)
-        val safetyRefreshEvent = SafetyEvent.Builder(
-            SafetyEvent.SAFETY_EVENT_TYPE_REFRESH_REQUESTED)
-            .setRefreshBroadcastId(refreshBroadcastId)
-            .build()
-        sendIssuesToSafetyCenter(safetyRefreshEvent)
+        if (DEBUG) {
+            Log.v(LOG_TAG, "rescan and push event from safety center $refreshEvent")
+        }
+        val safetyCenterEvent = getSafetyCenterEvent(refreshEvent, intent)
+        sendIssuesToSafetyCenter(safetyCenterEvent)
     }
 
     @VisibleForTesting
     internal data class AccessibilityComponent(
         val componentName: ComponentName,
-        val notificationShownTime: Long = 0L,
-        val signalResolvedTime: Long = 0L
-    )
+        val notificationShownTime: Long = 0L
+    ) : PrivacySourceData {
+        override fun toStorageData(): String {
+            return componentName.flattenToString() + " " + notificationShownTime
+        }
+    }
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 class AccessibilityPackageResetHandler : BroadcastReceiver() {
+    private val LOG_TAG = AccessibilityPackageResetHandler::class.java.simpleName
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
@@ -734,10 +772,13 @@ class AccessibilityPackageResetHandler : BroadcastReceiver() {
         }
 
         val data = Preconditions.checkNotNull(intent.data)
-        GlobalScope.launch(Dispatchers.Default) {
+        val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        coroutineScope.launch(Dispatchers.Default) {
+            if (DEBUG) {
+                Log.v(LOG_TAG, "package reset event occurred for ${data.schemeSpecificPart}")
+            }
             AccessibilitySourceService(context).run {
                 removePackageState(data.schemeSpecificPart)
-                sendIssuesToSafetyCenter()
             }
         }
     }
@@ -745,11 +786,30 @@ class AccessibilityPackageResetHandler : BroadcastReceiver() {
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 class AccessibilityNotificationDeleteHandler : BroadcastReceiver() {
+    private val LOG_TAG = AccessibilityNotificationDeleteHandler::class.java.simpleName
     override fun onReceive(context: Context, intent: Intent) {
-        val componentName =
+        val componentName: ComponentName =
             Utils.getParcelableExtraSafe<ComponentName>(intent, Intent.EXTRA_COMPONENT_NAME)
-        GlobalScope.launch(Dispatchers.Default) {
+        val sessionId =
+            intent.getLongExtra(Constants.EXTRA_SESSION_ID, Constants.INVALID_SESSION_ID)
+        val uid = intent.getIntExtra(Intent.EXTRA_UID, -1)
+        val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        coroutineScope.launch(Dispatchers.Default) {
+            if (DEBUG) {
+                Log.v(LOG_TAG, "deleting notification for ${componentName.flattenToShortString()}")
+            }
             AccessibilitySourceService(context).markAsNotified(componentName)
+
+            if (DEBUG) {
+                Log.v(LOG_TAG, "NOTIF_INTERACTION DISMISSED metric, uid $uid session $sessionId")
+            }
+            PermissionControllerStatsLog.write(
+                PRIVACY_SIGNAL_NOTIFICATION_INTERACTION,
+                PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__PRIVACY_SOURCE__A11Y_SERVICE,
+                uid,
+                PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__ACTION__DISMISSED,
+                sessionId
+            )
         }
     }
 }
@@ -764,7 +824,14 @@ class AccessibilityRemoveAccessHandler : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val a11yService: ComponentName =
             Utils.getParcelableExtraSafe<ComponentName>(intent, Intent.EXTRA_COMPONENT_NAME)
-        GlobalScope.launch(Dispatchers.Default) {
+        val sessionId =
+            intent.getLongExtra(Constants.EXTRA_SESSION_ID, Constants.INVALID_SESSION_ID)
+        val uid = intent.getIntExtra(Intent.EXTRA_UID, -1)
+        val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        coroutineScope.launch(Dispatchers.Default) {
+            if (DEBUG) {
+                Log.v(LOG_TAG, "disabling a11y service ${a11yService.flattenToShortString()}")
+            }
             val accessibilityService = AccessibilitySourceService(context)
             val builder = try {
                 AccessibilitySettingsUtil.disableAccessibilityService(context, a11yService)
@@ -782,6 +849,17 @@ class AccessibilityRemoveAccessHandler : BroadcastReceiver() {
                 .build()
 
             accessibilityService.sendIssuesToSafetyCenter(safetyEvent)
+
+            if (DEBUG) {
+                Log.v(LOG_TAG, "ISSUE_CARD_INTERACTION CTA1 metric, uid $uid session $sessionId")
+            }
+            PermissionControllerStatsLog.write(
+                PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION,
+                PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION__PRIVACY_SOURCE__A11Y_SERVICE,
+                uid,
+                PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION__ACTION__CLICKED_CTA1,
+                sessionId
+            )
         }
     }
 }
@@ -791,14 +869,34 @@ class AccessibilityRemoveAccessHandler : BroadcastReceiver() {
  */
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 class AccessibilityWarningCardDismissalReceiver : BroadcastReceiver() {
+    private val LOG_TAG = AccessibilityWarningCardDismissalReceiver::class.java.simpleName
+
     override fun onReceive(context: Context, intent: Intent) {
         val componentName =
             Utils.getParcelableExtraSafe<ComponentName>(intent, Intent.EXTRA_COMPONENT_NAME)
-        GlobalScope.launch(Dispatchers.Default) {
+        val sessionId =
+            intent.getLongExtra(Constants.EXTRA_SESSION_ID, Constants.INVALID_SESSION_ID)
+        val uid = intent.getIntExtra(Intent.EXTRA_UID, -1)
+        val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        coroutineScope.launch(Dispatchers.Default) {
+            if (DEBUG) {
+                Log.v(LOG_TAG, "removing notification for ${componentName.flattenToShortString()}")
+            }
             val accessibilityService = AccessibilitySourceService(context)
             accessibilityService.removeAccessibilityNotification(componentName)
             accessibilityService.markAsNotified(componentName)
         }
+
+        if (DEBUG) {
+            Log.v(LOG_TAG, "ISSUE_CARD_INTERACTION DISMISSED metric, uid $uid session $sessionId")
+        }
+        PermissionControllerStatsLog.write(
+            PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION,
+            PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION__PRIVACY_SOURCE__A11Y_SERVICE,
+            uid,
+            PRIVACY_SIGNAL_ISSUE_CARD_INTERACTION__ACTION__CARD_DISMISSED,
+            sessionId
+        )
     }
 }
 
@@ -811,10 +909,12 @@ class AccessibilityOnBootReceiver : BroadcastReceiver() {
     private val LOG_TAG = AccessibilityOnBootReceiver::class.java.simpleName
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (Intent.ACTION_BOOT_COMPLETED != intent.action ||
-            !isAccessibilitySourceSupported() || isProfile(context)) {
+        if (!isAccessibilitySourceSupported() || isProfile(context)) {
             Log.v(LOG_TAG, "accessibility privacy job not supported, can't schedule the job")
             return
+        }
+        if (DEBUG) {
+            Log.v(LOG_TAG, "scheduling safety center accessibility privacy source job")
         }
 
         val jobScheduler = getSystemServiceSafe(context, JobScheduler::class.java)
@@ -850,22 +950,27 @@ class AccessibilityJobService : JobService() {
 
     override fun onCreate() {
         super.onCreate()
+        if (DEBUG) {
+            Log.v(LOG_TAG, "accessibility privacy source job created.")
+        }
         mSourceService = AccessibilitySourceService(this)
     }
 
     override fun onStartJob(params: JobParameters?): Boolean {
         synchronized(mLock) {
             if (mCurrentJob != null) {
-                Log.w(LOG_TAG, "Accessibility privacy source job already running")
+                Log.v(LOG_TAG, "Accessibility privacy source job already running")
                 return false
             }
             if (!isAccessibilitySourceEnabled() ||
                 !isSafetyCenterEnabled(this@AccessibilityJobService)) {
+                Log.v(LOG_TAG, "either privacy source or safety center is not enabled")
                 jobFinished(params, false)
                 mCurrentJob = null
                 return false
             }
-            mCurrentJob = GlobalScope.launch(Dispatchers.Default) {
+            val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            mCurrentJob = coroutineScope.launch(Dispatchers.Default) {
                 mSourceService?.processAccessibilityJob(
                     params,
                     this@AccessibilityJobService,
@@ -906,13 +1011,22 @@ class SafetyCenterAccessibilityListener(val context: Context) :
     private val LOG_TAG = SafetyCenterAccessibilityListener::class.java.simpleName
 
     override fun onAccessibilityServicesStateChanged(manager: AccessibilityManager) {
+        if (!isAccessibilityListenerEnabled()) {
+            Log.v(LOG_TAG, "accessibility event occurred, listener not enabled.")
+            return
+        }
+
         if (!isAccessibilitySourceEnabled() || !isSafetyCenterEnabled(context) ||
             isProfile(context)) {
             Log.v(LOG_TAG, "accessibility event occurred, safety center feature not enabled.")
             return
         }
 
-        GlobalScope.launch(Dispatchers.Default) {
+        val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        coroutineScope.launch(Dispatchers.Default) {
+            if (DEBUG) {
+                Log.v(LOG_TAG, "processing accessibility event")
+            }
             val a11ySourceService = AccessibilitySourceService(context)
             val a11yEnabledServices = a11ySourceService.getEnabledAccessibilityServices()
             a11ySourceService.sendIssuesToSafetyCenter(a11yEnabledServices)
@@ -921,6 +1035,5 @@ class SafetyCenterAccessibilityListener(val context: Context) :
             }.toSet()
             a11ySourceService.removeAccessibilityNotification(enabledComponents)
         }
-        Log.v(LOG_TAG, "accessibility changes processed.")
     }
 }
