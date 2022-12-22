@@ -31,8 +31,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
-import com.android.permissioncontroller.R;
-
 import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.IOException;
@@ -41,12 +39,18 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * Parser for {@link Role} definitions.
  */
 @VisibleForTesting
 public class RoleParser {
+
+    /**
+     * Function to retrieve the roles.xml resource from a context
+     */
+    public static volatile Function<Context, XmlResourceParser> sGetRolesXml;
 
     private static final String LOG_TAG = RoleParser.class.getSimpleName();
 
@@ -92,6 +96,7 @@ public class RoleParser {
     private static final String ATTRIBUTE_SHOW_NONE = "showNone";
     private static final String ATTRIBUTE_STATIC = "static";
     private static final String ATTRIBUTE_SYSTEM_ONLY = "systemOnly";
+    private static final String ATTRIBUTE_UI_BEHAVIOR = "uiBehavior";
     private static final String ATTRIBUTE_VISIBLE = "visible";
     private static final String ATTRIBUTE_MIN_TARGET_SDK_VERSION = "minTargetSdkVersion";
     private static final String ATTRIBUTE_PERMISSION = "permission";
@@ -138,7 +143,7 @@ public class RoleParser {
      */
     @NonNull
     public ArrayMap<String, Role> parse() {
-        try (XmlResourceParser parser = mContext.getResources().getXml(R.xml.roles)) {
+        try (XmlResourceParser parser = sGetRolesXml.apply(mContext)) {
             Pair<ArrayMap<String, PermissionSet>, ArrayMap<String, Role>> xml = parseXml(parser);
             if (xml == null) {
                 return new ArrayMap<>();
@@ -408,6 +413,8 @@ public class RoleParser {
 
         boolean systemOnly = getAttributeBooleanValue(parser, ATTRIBUTE_SYSTEM_ONLY, false);
 
+        String uiBehaviorName = getAttributeValue(parser, ATTRIBUTE_UI_BEHAVIOR);
+
         List<RequiredComponent> requiredComponents = null;
         List<Permission> permissions = null;
         List<String> appOpPermissions = null;
@@ -491,7 +498,7 @@ public class RoleParser {
                 maxSdkVersion, minSdkVersion, overrideUserWhenGranting, requestDescriptionResource,
                 requestTitleResource, requestable, searchKeywordsResource, shortLabelResource,
                 showNone, statik, systemOnly, visible, requiredComponents, permissions,
-                appOpPermissions, appOps, preferredActivities);
+                appOpPermissions, appOps, preferredActivities, uiBehaviorName);
     }
 
     @NonNull

@@ -88,10 +88,13 @@ defaults to `false`.
 - `static`: Whether this role is static, i.e. the role will always be assigned to its default
 holders. This attribute is optional and defaults to `false`.
 - `systemOnly`: Whether this role only allows system apps to hold it. This attribute is optional and
-defaults to `false.
+defaults to `false`.
 - `visible`: Whether this role is visible to users. If a role is invisible (a.k.a. hidden) to users,
 users won't be able to find it in Settings, and apps won't be able to request it. The role can still
 be managed by system APIs and shell command.
+- `uiBehavior`: Optional name of a [`RoleUiBehavior`](ui/behavior/RoleUiBehavior.java) class to
+control certain role UI behavior in Java code, e.g. `DialerRoleUiBehavior`. This can be useful
+when the XML syntax cannot express certain UI behavior specific to the role.
 
 The following tags can be specified inside a `<role>` tag:
 
@@ -174,6 +177,7 @@ dumpsys role
 You can also manage the role holders with `cmd role`:
 
 ```bash
+cmd role get-role-holders [--user USER_ID] ROLE
 cmd role add-role-holder [--user USER_ID] ROLE PACKAGE [FLAGS]
 cmd role remove-role-holder [--user USER_ID] ROLE PACKAGE [FLAGS]
 cmd role clear-role-holders [--user USER_ID] ROLE [FLAGS]

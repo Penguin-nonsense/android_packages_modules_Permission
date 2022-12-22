@@ -90,8 +90,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 private val TAG = "NotificationListenerCheck"
-private const val DEBUG = false
-
+private const val DEBUG = true
 const val SC_NLS_SOURCE_ID = "AndroidNotificationListener"
 @VisibleForTesting const val SC_NLS_DISABLE_ACTION_ID = "disable_nls_component"
 
@@ -109,8 +108,9 @@ private const val PROPERTY_NOTIFICATION_LISTENER_CHECK_INTERVAL_MILLIS =
 private val DEFAULT_NOTIFICATION_LISTENER_CHECK_INTERVAL_MILLIS = DAYS.toMillis(1)
 
 private fun isNotificationListenerCheckFlagEnabled(): Boolean {
+    // TODO: b/249789657 Set default to true after policy exemption + impact analysis
     return DeviceConfig.getBoolean(
-        DeviceConfig.NAMESPACE_PRIVACY, PROPERTY_NOTIFICATION_LISTENER_CHECK_ENABLED, true)
+        DeviceConfig.NAMESPACE_PRIVACY, PROPERTY_NOTIFICATION_LISTENER_CHECK_ENABLED, false)
 }
 
 /**
@@ -196,8 +196,8 @@ internal class NotificationListenerCheckInternal(
     private val sharedPrefs: SharedPreferences =
         parentUserContext.getSharedPreferences(NLS_PREFERENCE_FILE, MODE_PRIVATE)
     private val exemptPackages: Set<String> =
-        getExemptedPackages(getSystemServiceSafe(parentUserContext, RoleManager::class.java),
-                parentUserContext)
+        getExemptedPackages(
+            getSystemServiceSafe(parentUserContext, RoleManager::class.java), parentUserContext)
 
     companion object {
         @VisibleForTesting const val NLS_PREFERENCE_FILE = "nls_preference"
@@ -265,17 +265,13 @@ internal class NotificationListenerCheckInternal(
     private suspend fun getEnabledNotificationListenersAndNotifyIfNeededLocked() {
         val enabledComponents: List<ComponentName> = getEnabledNotificationListeners()
 
-        // Load already notified components
-        // Filter to only those that still have enabled listeners
+        // Clear disabled but previously notified components from notified components data
+        removeDisabledComponentsFromNotifiedComponents(enabledComponents)
         val notifiedComponents =
             getNotifiedComponents().mapNotNull { ComponentName.unflattenFromString(it) }
-        val enabledNotifiedComponents = notifiedComponents.filter { enabledComponents.contains(it) }
-
-        // Clear disabled but previously notified components from notified components list
-        updateNotifiedComponents(enabledNotifiedComponents)
 
         // Filter to unnotified components
-        val unNotifiedComponents = enabledComponents.filter { it !in enabledNotifiedComponents }
+        val unNotifiedComponents = enabledComponents.filter { it !in notifiedComponents }
         var sessionId = Constants.INVALID_SESSION_ID
         while (sessionId == Constants.INVALID_SESSION_ID) {
             sessionId = random.nextLong()
@@ -338,12 +334,19 @@ internal class NotificationListenerCheckInternal(
         return sharedPrefs.getStringSet(KEY_ALREADY_NOTIFIED_COMPONENTS, mutableSetOf<String>())!!
     }
 
-    internal suspend fun updateNotifiedComponents(components: Collection<ComponentName>) {
+    internal suspend fun removeDisabledComponentsFromNotifiedComponents(
+        enabledComponents: Collection<ComponentName>
+    ) {
         sharedPrefsLock.withLock {
-            val notifiedComponents = components.map { it.flattenToShortString() }.toSet()
+            val enabledComponentsStringSet =
+                enabledComponents.map { it.flattenToShortString() }.toSet()
+            val notifiedComponents = getNotifiedComponents()
+            // Filter to only components that have enabled listeners
+            val enabledNotifiedComponents =
+                notifiedComponents.filter { enabledComponentsStringSet.contains(it) }.toSet()
             sharedPrefs
                 .edit()
-                .putStringSet(KEY_ALREADY_NOTIFIED_COMPONENTS, notifiedComponents)
+                .putStringSet(KEY_ALREADY_NOTIFIED_COMPONENTS, enabledNotifiedComponents)
                 .apply()
         }
     }
@@ -378,6 +381,33 @@ internal class NotificationListenerCheckInternal(
         }
     }
 
+    internal suspend fun removeFromNotifiedComponents(component: ComponentName) {
+        val componentNameShortString = component.flattenToShortString()
+        sharedPrefsLock.withLock {
+            val notifiedComponents = getNotifiedComponents()
+            val componentRemoved = notifiedComponents.remove(componentNameShortString)
+            if (componentRemoved) {
+                sharedPrefs
+                    .edit()
+                    .putStringSet(KEY_ALREADY_NOTIFIED_COMPONENTS, notifiedComponents)
+                    .apply()
+            }
+        }
+    }
+
+    private fun getLastNotificationShownTimeMillis(): Long {
+        return sharedPrefs.getLong(KEY_LAST_NOTIFICATION_LISTENER_NOTIFICATION_SHOWN, 0)
+    }
+
+    private suspend fun updateLastShownNotificationTime() {
+        sharedPrefsLock.withLock {
+            sharedPrefs
+                .edit()
+                .putLong(KEY_LAST_NOTIFICATION_LISTENER_NOTIFICATION_SHOWN, currentTimeMillis())
+                .apply()
+        }
+    }
+
     @Throws(InterruptedException::class)
     private suspend fun postSystemNotificationIfNeeded(
         components: List<ComponentName>,
@@ -386,8 +416,7 @@ internal class NotificationListenerCheckInternal(
         val componentsInternal = components.toMutableList()
 
         // Don't show too many notification within certain timespan
-        if (currentTimeMillis() -
-            sharedPrefs.getLong(KEY_LAST_NOTIFICATION_LISTENER_NOTIFICATION_SHOWN, 0) <
+        if (currentTimeMillis() - getLastNotificationShownTimeMillis() <
             getInBetweenNotificationsMillis()) {
             if (DEBUG) {
                 Log.v(
@@ -464,7 +493,7 @@ internal class NotificationListenerCheckInternal(
      * @param componentName the [ComponentName] of the Notification Listener
      * @param pkg The [PackageInfo] for the [ComponentName] package
      */
-    private fun createNotificationForNotificationListener(
+    private suspend fun createNotificationForNotificationListener(
         componentName: ComponentName,
         pkg: PackageInfo,
         sessionId: Long
@@ -515,7 +544,7 @@ internal class NotificationListenerCheckInternal(
                 .setDeleteIntent(deletePendingIntent)
                 .setContentIntent(clickPendingIntent)
 
-        if (appLabel.isNotEmpty()) {
+        if (appLabel != null && appLabel.isNotEmpty()) {
             val appNameExtras = Bundle()
             appNameExtras.putString(Notification.EXTRA_SUBSTITUTE_APP_NAME, appLabel.toString())
             b.addExtras(appNameExtras)
@@ -539,10 +568,7 @@ internal class NotificationListenerCheckInternal(
             uid,
             PRIVACY_SIGNAL_NOTIFICATION_INTERACTION__ACTION__NOTIFICATION_SHOWN,
             sessionId)
-        sharedPrefs
-            .edit()
-            .putLong(KEY_LAST_NOTIFICATION_LISTENER_NOTIFICATION_SHOWN, currentTimeMillis())
-            .apply()
+        updateLastShownNotificationTime()
     }
 
     /** @return [PendingIntent] to safety center */
@@ -813,7 +839,7 @@ class NotificationListenerCheckJobService : JobService() {
 
     override fun onCreate() {
         super.onCreate()
-
+        if (DEBUG) Log.d(TAG, "Nls privacy job created")
         if (!checkNotificationListenerCheckEnabled(this)) {
             // NotificationListenerCheck not enabled. End job.
             return
@@ -838,6 +864,7 @@ class NotificationListenerCheckJobService : JobService() {
      * @return `false` if another check is already running, or if SDK Check fails (below T)
      */
     override fun onStartJob(params: JobParameters): Boolean {
+        if (DEBUG) Log.d(TAG, "Nls privacy job started")
         if (!checkNotificationListenerCheckEnabled(this)) {
             // NotificationListenerCheck not enabled. End job.
             return false
@@ -994,6 +1021,7 @@ class DisableNotificationListenerComponentHandler : BroadcastReceiver() {
 
             NotificationListenerCheckInternal(context, null).run {
                 removeNotificationsForComponent(componentName)
+                removeFromNotifiedComponents(componentName)
                 sendIssuesToSafetyCenter(safetyEvent)
             }
             PermissionControllerStatsLog.write(

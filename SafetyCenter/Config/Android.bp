@@ -36,10 +36,15 @@ java_library {
         "androidx.annotation_annotation",
         "framework-annotations-lib",
         "framework-permission-s",
+        "modules-utils-build",
     ],
     apex_available: [
         "com.android.permission",
         "test_com.android.permission",
     ],
     installable: false,
+    visibility: [
+        "//packages/modules/Permission:__subpackages__",
+        "//vendor:__subpackages__",
+    ],
 }

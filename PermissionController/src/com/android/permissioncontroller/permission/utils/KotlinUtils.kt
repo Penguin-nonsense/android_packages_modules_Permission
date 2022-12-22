@@ -35,6 +35,7 @@ import android.content.Intent
 import android.content.Intent.ACTION_MAIN
 import android.content.Intent.CATEGORY_INFO
 import android.content.Intent.CATEGORY_LAUNCHER
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.PackageManager.FLAG_PERMISSION_AUTO_REVOKED
 import android.content.pm.PackageManager.FLAG_PERMISSION_ONE_TIME
@@ -50,6 +51,8 @@ import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.healthconnect.HealthPermissions.HEALTH_PERMISSION_GROUP
+import android.healthconnect.HealthPermissions.MANAGE_HEALTH_PERMISSIONS
 import android.os.Build
 import android.os.Bundle
 import android.os.UserHandle
@@ -75,16 +78,16 @@ import com.android.permissioncontroller.permission.model.livedatatypes.LightPerm
 import com.android.permissioncontroller.permission.model.livedatatypes.PermState
 import com.android.permissioncontroller.permission.service.LocationAccessCheck
 import com.android.permissioncontroller.permission.ui.handheld.SettingsWithLargeHeader
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 /**
  * A set of util functions designed to work with kotlin, though they can work with java, as well.
  */
@@ -116,6 +119,116 @@ object KotlinUtils {
      */
     private val ONE_TIME_PACKAGE_IMPORTANCE_LEVEL_TO_KEEP_SESSION_ALIVE =
         ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE
+
+    /** Whether to show the Permissions Hub.  */
+    private const val PROPERTY_PERMISSIONS_HUB_2_ENABLED = "permissions_hub_2_enabled"
+
+    /** Whether to show the mic and camera icons.  */
+    private const val PROPERTY_CAMERA_MIC_ICONS_ENABLED = "camera_mic_icons_enabled"
+
+    /** Whether to show the location indicators. */
+    private const val PROPERTY_LOCATION_INDICATORS_ENABLED = "location_indicators_enabled"
+
+    /** Whether location accuracy feature is enabled */
+    private const val PROPERTY_LOCATION_ACCURACY_ENABLED = "location_accuracy_enabled"
+
+    /** Whether to show 7-day toggle in privacy hub.  */
+    private const val PRIVACY_DASHBOARD_7_DAY_TOGGLE = "privacy_dashboard_7_day_toggle"
+
+    /** Default location precision */
+    private const val PROPERTY_LOCATION_PRECISION = "location_precision"
+
+    /**
+     * Whether the Permissions Hub 2 flag is enabled
+     *
+     * @return whether the flag is enabled
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun isPermissionsHub2FlagEnabled(): Boolean {
+        return SdkLevel.isAtLeastS() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_PERMISSIONS_HUB_2_ENABLED, false)
+    }
+    /**
+     * Whether to show the Permissions Dashboard
+     *
+     * @return whether to show the Permissions Dashboard.
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun shouldShowPermissionsDashboard(): Boolean {
+        return isPermissionsHub2FlagEnabled()
+    }
+
+    /**
+     * Whether the Camera and Mic Icons are enabled by flag.
+     *
+     * @return whether the Camera and Mic Icons are enabled.
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun isCameraMicIconsFlagEnabled(): Boolean {
+        return SdkLevel.isAtLeastS() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_CAMERA_MIC_ICONS_ENABLED, true)
+    }
+
+    /**
+     * Whether to show Camera and Mic Icons. They should be shown if the permission hub, or the icons
+     * specifically, are enabled.
+     *
+     * @return whether to show the icons.
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun shouldShowCameraMicIndicators(): Boolean {
+        return isCameraMicIconsFlagEnabled() || isPermissionsHub2FlagEnabled()
+    }
+
+    /**
+     * Whether the location indicators are enabled by flag.
+     *
+     * @return whether the location indicators are enabled by flag.
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun isLocationIndicatorsFlagEnabled(): Boolean {
+        return SdkLevel.isAtLeastS() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_LOCATION_INDICATORS_ENABLED, false)
+    }
+
+    /**
+     * Whether to show the location indicators. The location indicators are enable if the
+     * permission hub, or location indicator specifically are enabled.
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun shouldShowLocationIndicators(): Boolean {
+        return isLocationIndicatorsFlagEnabled() || isPermissionsHub2FlagEnabled()
+    }
+
+    /**
+     * Whether the location accuracy feature is enabled
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun isLocationAccuracyEnabled(): Boolean {
+        return SdkLevel.isAtLeastS() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_LOCATION_ACCURACY_ENABLED, true)
+    }
+
+    /**
+     * Default state of location precision
+     * true: default is FINE.
+     * false: default is COARSE.
+     */
+    fun getDefaultPrecision(): Boolean {
+        return !SdkLevel.isAtLeastS() || DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_LOCATION_PRECISION, true)
+    }
+
+    /**
+     * Whether we should enable the 7-day toggle in privacy dashboard
+     *
+     * @return whether the flag is enabled
+     */
+    @ChecksSdkIntAtLeast(Build.VERSION_CODES.S)
+    fun is7DayToggleEnabled(): Boolean {
+        return SdkLevel.isAtLeastS() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PRIVACY_DASHBOARD_7_DAY_TOGGLE, false)
+    }
 
     /**
      * Given a Map, and a List, determines which elements are in the list, but not the map, and
@@ -278,7 +391,7 @@ object KotlinUtils {
             }
 
             if (icon == null) {
-                val groupName = Utils.getGroupOfPermission(permInfo) ?: permInfo.name
+                val groupName = PermissionMapping.getGroupOfPermission(permInfo) ?: permInfo.name
                 icon = getPermGroupIcon(context, groupName)
             }
 
@@ -915,7 +1028,8 @@ object KotlinUtils {
                 // cancel location access warning notification
                 LocationAccessCheck(app, null).cancelBackgroundAccessWarningNotification(
                     group.packageInfo.packageName,
-                    user
+                    user,
+                    true
                 )
             }
         }
@@ -1194,6 +1308,68 @@ object KotlinUtils {
                     .getIdentifier("config_safetyProtectionEnabled", "bool", "android")) &&
             context.getDrawable(android.R.drawable.ic_safety_protection) != null &&
             !context.getString(android.R.string.safety_protection_display_text).isNullOrEmpty()
+    }
+
+    // TODO(b/248124555): Make these filter only dangerous permissions.
+    fun addHealthPermissions(context: Context) {
+        val permissions = getDefinedHealthPerms(context.packageManager)
+        PermissionMapping.addHealthPermissionsToPlatform(permissions)
+    }
+
+    private fun getDefinedHealthPerms(packageManager: PackageManager): Set<String> {
+        val permissionInfos = getHealthPermissionControllerPermissionInfos(packageManager)
+        if (permissionInfos.isEmpty()) {
+            return emptySet()
+        }
+
+        val definedHealthPerms: MutableSet<String> = hashSetOf()
+        for (permInfo in permissionInfos) {
+            if (HEALTH_PERMISSION_GROUP.equals(permInfo.group)) {
+                definedHealthPerms.add(permInfo.name)
+            }
+        }
+        return definedHealthPerms
+    }
+
+    /**
+     * Gets permission infos for all permissions defined by the health connect mainline module and
+     * part of the health connect modules' permission group.
+     */
+    private fun getHealthPermissionControllerPermissionInfos(packageManager: PackageManager):
+            List<PermissionInfo> {
+        val standardHealthPermissionInfo =
+                getPermissionInfoForStandardHealthPermission(packageManager)
+        if (standardHealthPermissionInfo?.packageName == null) {
+            return emptyList()
+        }
+
+        val standardHealthPermissionPackage = standardHealthPermissionInfo?.packageName!!
+        val healthPackageInfo: PackageInfo
+        try {
+            healthPackageInfo = packageManager.getPackageInfo(standardHealthPermissionPackage,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.e(LOG_TAG, "HealthConnect permissions APK ($standardHealthPermissionPackage)" +
+                    " not found")
+            return emptyList()
+        }
+
+        if (healthPackageInfo.permissions == null) {
+            Log.e(LOG_TAG, "No HealthConnect permissions defined in APK " +
+                    "($standardHealthPermissionPackage)")
+            return emptyList()
+        }
+        return healthPackageInfo.permissions.toList()
+    }
+
+    private fun getPermissionInfoForStandardHealthPermission(packageManager: PackageManager):
+            PermissionInfo? {
+        return try {
+            packageManager.getPermissionInfo(MANAGE_HEALTH_PERMISSIONS, 0)
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.e(LOG_TAG, "HealthConnect permission $MANAGE_HEALTH_PERMISSIONS) not found")
+            null
+        }
     }
 }
 

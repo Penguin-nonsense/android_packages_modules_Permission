@@ -16,26 +16,28 @@
 
 package com.android.permission.access
 
+import com.android.permission.access.appop.PackageAppOpPolicy
+import com.android.permission.access.appop.UidAppOpPolicy
+import com.android.permission.access.collection.* // ktlint-disable no-wildcard-imports
 import com.android.permission.access.external.PackageState
 import com.android.permission.access.permission.UidPermissionPolicy
-import com.android.permission.access.util.* // ktlint-disable no-wildcard-imports
 
 class AccessPolicy private constructor(
     private val schemePolicies: IndexedMap<String, IndexedMap<String, SchemePolicy>>
 ) {
     constructor() : this(
         IndexedMap<String, IndexedMap<String, SchemePolicy>>().apply {
-            val uidPermissionPolicy = UidPermissionPolicy()
-            getOrPut(uidPermissionPolicy.subjectScheme) { IndexedMap() }
-                .put(uidPermissionPolicy.objectScheme, uidPermissionPolicy)
+            fun addPolicy(policy: SchemePolicy) =
+                getOrPut(policy.subjectScheme) { IndexedMap() }.put(policy.objectScheme, policy)
+
+            addPolicy(UidPermissionPolicy())
+            addPolicy(UidAppOpPolicy())
+            addPolicy(PackageAppOpPolicy())
         }
     )
 
-    fun getDecision(subject: AccessUri, `object`: AccessUri, state: AccessState): Int {
-        // TODO: Warn when not found?
-        val schemePolicy = getSchemePolicy(subject, `object`) ?: return AccessDecisions.DENIED
-        return schemePolicy.getDecision(subject, `object`, state)
-    }
+    fun getDecision(subject: AccessUri, `object`: AccessUri, state: AccessState): Int =
+        getSchemePolicy(subject, `object`).getDecision(subject, `object`, state)
 
     fun setDecision(
         subject: AccessUri,
@@ -44,13 +46,14 @@ class AccessPolicy private constructor(
         oldState: AccessState,
         newState: AccessState
     ) {
-        // TODO: Warn when not found?
-        val schemePolicy = getSchemePolicy(subject, `object`) ?: return
-        return schemePolicy.setDecision(subject, `object`, decision, oldState, newState)
+        getSchemePolicy(subject, `object`)
+            .setDecision(subject, `object`, decision, oldState, newState)
     }
 
-    private fun getSchemePolicy(subject: AccessUri, `object`: AccessUri): SchemePolicy? =
-        schemePolicies[subject.scheme]?.get(`object`.scheme)
+    private fun getSchemePolicy(subject: AccessUri, `object`: AccessUri): SchemePolicy =
+        checkNotNull(schemePolicies[subject.scheme]?.get(`object`.scheme)) {
+            "Scheme policy for subject=$subject object=$`object` does not exist"
+        }
 
     fun onUserAdded(userId: Int, oldState: AccessState, newState: AccessState) {
         newState.systemState.userIds += userId
@@ -109,6 +112,10 @@ class AccessPolicy private constructor(
 }
 
 abstract class SchemePolicy {
+    @Volatile
+    private var onDecisionChangedListeners = IndexedListSet<OnDecisionChangedListener>()
+    private val onDecisionChangedListenersLock = Any()
+
     abstract val subjectScheme: String
 
     abstract val objectScheme: String
@@ -123,23 +130,56 @@ abstract class SchemePolicy {
         newState: AccessState
     )
 
-    abstract fun onUserAdded(userId: Int, oldState: AccessState, newState: AccessState)
+    fun addOnDecisionChangedListener(listener: OnDecisionChangedListener) {
+        synchronized(onDecisionChangedListenersLock) {
+            onDecisionChangedListeners = onDecisionChangedListeners + listener
+        }
+    }
 
-    abstract fun onUserRemoved(userId: Int, oldState: AccessState, newState: AccessState)
+    fun removeOnDecisionChangedListener(listener: OnDecisionChangedListener) {
+        synchronized(onDecisionChangedListenersLock) {
+            onDecisionChangedListeners = onDecisionChangedListeners - listener
+        }
+    }
 
-    abstract fun onAppIdAdded(appId: Int, oldState: AccessState, newState: AccessState)
+    protected fun notifyOnDecisionChangedListeners(
+        subject: AccessUri,
+        `object`: AccessUri,
+        oldDecision: Int,
+        newDecision: Int
+    ) {
+        val listeners = onDecisionChangedListeners
+        listeners.forEachIndexed { _, it ->
+            it.onDecisionChanged(subject, `object`, oldDecision, newDecision)
+        }
+    }
 
-    abstract fun onAppIdRemoved(appId: Int, oldState: AccessState, newState: AccessState)
+    open fun onUserAdded(userId: Int, oldState: AccessState, newState: AccessState) {}
 
-    abstract fun onPackageAdded(
+    open fun onUserRemoved(userId: Int, oldState: AccessState, newState: AccessState) {}
+
+    open fun onAppIdAdded(appId: Int, oldState: AccessState, newState: AccessState) {}
+
+    open fun onAppIdRemoved(appId: Int, oldState: AccessState, newState: AccessState) {}
+
+    open fun onPackageAdded(
         packageState: PackageState,
         oldState: AccessState,
         newState: AccessState
-    )
+    ) {}
 
-    abstract fun onPackageRemoved(
+    open fun onPackageRemoved(
         packageState: PackageState,
         oldState: AccessState,
         newState: AccessState
-    )
+    ) {}
+
+    fun interface OnDecisionChangedListener {
+        fun onDecisionChanged(
+            subject: AccessUri,
+            `object`: AccessUri,
+            oldDecision: Int,
+            newDecision: Int
+        )
+    }
 }

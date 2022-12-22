@@ -116,6 +116,15 @@ final class SafetyCenterConfigReader {
     }
 
     /**
+     * Returns the groups of {@link SafetySource}, filtering out any sources where {@link
+     * SafetySources#isLoggable(SafetySource)} is false (and any resultingly empty groups).
+     */
+    @NonNull
+    List<SafetySourcesGroup> getLoggableSafetySourcesGroups() {
+        return getCurrentConfigInternal().getLoggableSourcesGroups();
+    }
+
+    /**
      * Returns the external {@link SafetySource} associated with the {@code safetySourceId}, if any.
      *
      * <p>The returned {@link SafetySource} can either be associated with the XML or overridden
@@ -143,9 +152,12 @@ final class SafetyCenterConfigReader {
         return getCurrentConfigInternal().getExternalSafetySources().containsKey(safetySourceId);
     }
 
-    /** Returns whether the {@link SafetyCenterConfig} is currently overridden. */
-    boolean isOverrideForTestsActive() {
-        return mConfigInternalOverrideForTests != null;
+    /** Returns whether the {@link SafetyCenterConfig} allows logging to statsd. */
+    boolean allowsStatsdLogging() {
+        if (!isOverrideForTestsActive()) {
+            return true;
+        }
+        return SafetyCenterFlags.getAllowStatsdLoggingInTests();
     }
 
     /**
@@ -155,6 +167,11 @@ final class SafetyCenterConfigReader {
     @NonNull
     List<Broadcast> getBroadcasts() {
         return getCurrentConfigInternal().getBroadcasts();
+    }
+
+    /** Returns whether the {@link SafetyCenterConfig} is currently overridden for tests. */
+    private boolean isOverrideForTestsActive() {
+        return mConfigInternalOverrideForTests != null;
     }
 
     @NonNull
@@ -195,11 +212,7 @@ final class SafetyCenterConfigReader {
         }
     }
 
-    /**
-     * Dumps state for debugging purposes.
-     *
-     * @param fout {@link PrintWriter} to write to
-     */
+    /** Dumps state for debugging purposes. */
     void dump(@NonNull PrintWriter fout) {
         fout.println("XML CONFIG");
         fout.println("\t" + mConfigInternalFromXml);
@@ -214,14 +227,17 @@ final class SafetyCenterConfigReader {
 
         @NonNull private final SafetyCenterConfig mConfig;
         @NonNull private final ArrayMap<String, ExternalSafetySource> mExternalSafetySources;
+        @NonNull private final List<SafetySourcesGroup> mLoggableSourcesGroups;
         @NonNull private final List<Broadcast> mBroadcasts;
 
         private SafetyCenterConfigInternal(
                 @NonNull SafetyCenterConfig safetyCenterConfig,
                 @NonNull ArrayMap<String, ExternalSafetySource> externalSafetySources,
+                @NonNull List<SafetySourcesGroup> loggableSourcesGroups,
                 @NonNull List<Broadcast> broadcasts) {
             mConfig = safetyCenterConfig;
             mExternalSafetySources = externalSafetySources;
+            mLoggableSourcesGroups = loggableSourcesGroups;
             mBroadcasts = broadcasts;
         }
 
@@ -233,6 +249,11 @@ final class SafetyCenterConfigReader {
         @NonNull
         private ArrayMap<String, ExternalSafetySource> getExternalSafetySources() {
             return mExternalSafetySources;
+        }
+
+        @NonNull
+        private List<SafetySourcesGroup> getLoggableSourcesGroups() {
+            return mLoggableSourcesGroups;
         }
 
         @NonNull
@@ -260,6 +281,8 @@ final class SafetyCenterConfigReader {
                     + mConfig
                     + ", mExternalSafetySources="
                     + mExternalSafetySources
+                    + ", mLoggableSourcesGroups="
+                    + mLoggableSourcesGroups
                     + ", mBroadcasts="
                     + mBroadcasts
                     + '}';
@@ -271,6 +294,7 @@ final class SafetyCenterConfigReader {
             return new SafetyCenterConfigInternal(
                     safetyCenterConfig,
                     extractExternalSafetySources(safetyCenterConfig),
+                    extractLoggableSafetySourcesGroups(safetyCenterConfig),
                     unmodifiableList(extractBroadcasts(safetyCenterConfig)));
         }
 
@@ -303,6 +327,35 @@ final class SafetyCenterConfigReader {
             }
 
             return externalSafetySources;
+        }
+
+        @NonNull
+        private static List<SafetySourcesGroup> extractLoggableSafetySourcesGroups(
+                @NonNull SafetyCenterConfig safetyCenterConfig) {
+            List<SafetySourcesGroup> originalGroups = safetyCenterConfig.getSafetySourcesGroups();
+            List<SafetySourcesGroup> filteredGroups = new ArrayList<>(originalGroups.size());
+
+            for (int i = 0; i < originalGroups.size(); i++) {
+                SafetySourcesGroup originalGroup = originalGroups.get(i);
+
+                SafetySourcesGroup.Builder filteredGroupBuilder =
+                        SafetySourcesGroups.copyToBuilderWithoutSources(originalGroup);
+                List<SafetySource> originalSources = originalGroup.getSafetySources();
+                for (int j = 0; j < originalSources.size(); j++) {
+                    SafetySource source = originalSources.get(j);
+
+                    if (SafetySources.isLoggable(source)) {
+                        filteredGroupBuilder.addSafetySource(source);
+                    }
+                }
+
+                SafetySourcesGroup filteredGroup = filteredGroupBuilder.build();
+                if (!filteredGroup.getSafetySources().isEmpty()) {
+                    filteredGroups.add(filteredGroup);
+                }
+            }
+
+            return filteredGroups;
         }
 
         @NonNull
@@ -362,7 +415,7 @@ final class SafetyCenterConfigReader {
 
         /** Returns the external {@link SafetySource}. */
         @NonNull
-        public SafetySource getSafetySource() {
+        SafetySource getSafetySource() {
             return mSafetySource;
         }
 
@@ -370,7 +423,7 @@ final class SafetyCenterConfigReader {
          * Returns whether the external {@link SafetySource} has an entry in a rigid {@link
          * SafetySourcesGroup}.
          */
-        public boolean hasEntryInRigidGroup() {
+        boolean hasEntryInRigidGroup() {
             return mHasEntryInRigidGroup;
         }
 
@@ -415,7 +468,7 @@ final class SafetyCenterConfigReader {
 
         /** Returns the package name to dispatch the broadcast to. */
         @NonNull
-        public String getPackageName() {
+        String getPackageName() {
             return mPackageName;
         }
 
@@ -427,7 +480,7 @@ final class SafetyCenterConfigReader {
          * @param refreshReason the {@link RefreshReason} for the broadcast
          */
         @NonNull
-        public List<String> getSourceIdsForProfileParent(@RefreshReason int refreshReason) {
+        List<String> getSourceIdsForProfileParent(@RefreshReason int refreshReason) {
             if (refreshReason == SafetyCenterManager.REFRESH_REASON_PAGE_OPEN) {
                 return unmodifiableList(mSourceIdsForProfileParentOnPageOpen);
             }
@@ -442,7 +495,7 @@ final class SafetyCenterConfigReader {
          * @param refreshReason the {@link RefreshReason} for the broadcast
          */
         @NonNull
-        public List<String> getSourceIdsForManagedProfiles(@RefreshReason int refreshReason) {
+        List<String> getSourceIdsForManagedProfiles(@RefreshReason int refreshReason) {
             if (refreshReason == SafetyCenterManager.REFRESH_REASON_PAGE_OPEN) {
                 return unmodifiableList(mSourceIdsForManagedProfilesOnPageOpen);
             }

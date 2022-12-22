@@ -43,6 +43,7 @@ android_test {
         "safety-center-config",
         "safety-center-internal-data",
         "safety-center-resources-lib",
+        "modules-utils-build",
         "truth-prebuilt",
         "Nene",
         "Harrier",
@@ -52,5 +53,8 @@ android_test {
         "cts",
         "general-tests",
         "mts-permission",
+    ],
+    resource_dirs: [
+        "res",
     ],
 }

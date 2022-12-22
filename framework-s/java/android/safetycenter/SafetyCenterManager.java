@@ -21,6 +21,7 @@ import static android.Manifest.permission.READ_SAFETY_CENTER_STATUS;
 import static android.Manifest.permission.SEND_SAFETY_CENTER_UPDATE;
 import static android.annotation.SdkConstant.SdkConstantType.BROADCAST_INTENT_ACTION;
 import static android.os.Build.VERSION_CODES.TIRAMISU;
+import static android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
 
 import static java.util.Objects.requireNonNull;
 
@@ -32,6 +33,7 @@ import android.annotation.RequiresPermission;
 import android.annotation.SdkConstant;
 import android.annotation.SystemApi;
 import android.annotation.SystemService;
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Binder;
@@ -195,10 +197,19 @@ public final class SafetyCenterManager {
      * disambiguate personal profile vs. managed profiles issues).
      *
      * <p>This extra can be used in conjunction with {@link #EXTRA_SAFETY_SOURCE_ISSUE_ID} and
-     * {@link #EXTRA_SAFETY_SOURCE_ID}. Otherwise, no redirection will occur.
+     * {@link #EXTRA_SAFETY_SOURCE_ID}. Otherwise, the device's primary user will be used.
      */
     public static final String EXTRA_SAFETY_SOURCE_USER_HANDLE =
             "android.safetycenter.extra.SAFETY_SOURCE_USER_HANDLE";
+
+    /**
+     * Used as a {@code String} extra field in {@link Intent#ACTION_SAFETY_CENTER} intents to
+     * specify the ID for a group of safety sources. If applicable, this will redirect to the
+     * group's corresponding subpage in the UI.
+     */
+    @RequiresApi(UPSIDE_DOWN_CAKE)
+    public static final String EXTRA_SAFETY_SOURCES_GROUP_ID =
+            "android.safetycenter.extra.SAFETY_SOURCES_GROUP_ID";
 
     /**
      * Used as an int value for {@link #EXTRA_REFRESH_SAFETY_SOURCES_REQUEST_TYPE} to indicate that
@@ -214,7 +225,7 @@ public final class SafetyCenterManager {
 
     /**
      * Used as an int value for {@link #EXTRA_REFRESH_SAFETY_SOURCES_REQUEST_TYPE} to indicate that
-     * upon receiving a broadcasts with intent action {@link #ACTION_REFRESH_SAFETY_SOURCES}, the
+     * upon receiving a broadcast with intent action {@link #ACTION_REFRESH_SAFETY_SOURCES}, the
      * safety source should provide data relating to their safety state to Safety Center.
      *
      * <p>If the source already has its safety data cached, it may provide it without triggering a
@@ -255,6 +266,10 @@ public final class SafetyCenterManager {
     /** Indicates a generic reason for Safety Center refresh. */
     public static final int REFRESH_REASON_OTHER = 600;
 
+    /** Indicates a periodic background refresh. */
+    @RequiresApi(UPSIDE_DOWN_CAKE)
+    public static final int REFRESH_REASON_PERIODIC = 700;
+
     /**
      * The reason for requesting a refresh of {@link SafetySourceData} from safety sources.
      *
@@ -268,9 +283,11 @@ public final class SafetyCenterManager {
                 REFRESH_REASON_DEVICE_REBOOT,
                 REFRESH_REASON_DEVICE_LOCALE_CHANGE,
                 REFRESH_REASON_SAFETY_CENTER_ENABLED,
-                REFRESH_REASON_OTHER
+                REFRESH_REASON_OTHER,
+                REFRESH_REASON_PERIODIC
             })
     @Retention(RetentionPolicy.SOURCE)
+    @TargetApi(UPSIDE_DOWN_CAKE)
     public @interface RefreshReason {}
 
     /** Listener for changes to {@link SafetyCenterData}. */

@@ -21,6 +21,7 @@ import static android.safetycenter.SafetyCenterManager.REFRESH_REASON_DEVICE_LOC
 import static android.safetycenter.SafetyCenterManager.REFRESH_REASON_DEVICE_REBOOT;
 import static android.safetycenter.SafetyCenterManager.REFRESH_REASON_OTHER;
 import static android.safetycenter.SafetyCenterManager.REFRESH_REASON_PAGE_OPEN;
+import static android.safetycenter.SafetyCenterManager.REFRESH_REASON_PERIODIC;
 import static android.safetycenter.SafetyCenterManager.REFRESH_REASON_RESCAN_BUTTON_CLICK;
 import static android.safetycenter.SafetyCenterManager.REFRESH_REASON_SAFETY_CENTER_ENABLED;
 
@@ -31,11 +32,12 @@ import android.annotation.Nullable;
 import android.annotation.UserIdInt;
 import android.os.RemoteException;
 import android.safetycenter.ISafetyCenterManager;
-import android.safetycenter.SafetyCenterManager;
+import android.safetycenter.SafetyCenterManager.RefreshReason;
 
 import androidx.annotation.RequiresApi;
 
 import com.android.modules.utils.BasicShellCommandHandler;
+import com.android.modules.utils.build.SdkLevel;
 
 import java.io.PrintWriter;
 import java.util.LinkedHashMap;
@@ -109,7 +111,7 @@ final class SafetyCenterShellCommandHandler extends BasicShellCommandHandler {
         return 0;
     }
 
-    @SafetyCenterManager.RefreshReason
+    @RefreshReason
     private int parseReason() {
         String arg = getNextArgRequired();
         Integer reason = REASONS.get(arg);
@@ -176,6 +178,9 @@ final class SafetyCenterShellCommandHandler extends BasicShellCommandHandler {
         reasons.put("LOCALE_CHANGE", REFRESH_REASON_DEVICE_LOCALE_CHANGE);
         reasons.put("SAFETY_CENTER_ENABLED", REFRESH_REASON_SAFETY_CENTER_ENABLED);
         reasons.put("OTHER", REFRESH_REASON_OTHER);
+        if (SdkLevel.isAtLeastU()) {
+            reasons.put("PERIODIC", REFRESH_REASON_PERIODIC);
+        }
         return unmodifiableMap(reasons);
     }
 }

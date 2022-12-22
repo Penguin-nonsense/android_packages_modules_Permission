@@ -19,7 +19,6 @@ package com.android.permissioncontroller.permission.ui.model
 import android.Manifest
 import android.Manifest.permission.ACCESS_COARSE_LOCATION
 import android.Manifest.permission.ACCESS_FINE_LOCATION
-import android.Manifest.permission_group.LOCATION
 import android.annotation.SuppressLint
 import android.app.AppOpsManager
 import android.app.AppOpsManager.MODE_ALLOWED
@@ -54,9 +53,6 @@ import com.android.permissioncontroller.permission.model.livedatatypes.LightPerm
 import com.android.permissioncontroller.permission.service.PermissionChangeStorageImpl
 import com.android.permissioncontroller.permission.service.v33.PermissionDecisionStorageImpl
 import com.android.permissioncontroller.permission.ui.AdvancedConfirmDialogArgs
-
-import com.android.permissioncontroller.permission.ui.handheld.v31.getDefaultPrecision
-import com.android.permissioncontroller.permission.ui.handheld.v31.isLocationAccuracyEnabled
 import com.android.permissioncontroller.permission.ui.model.AppPermissionViewModel.ButtonType.ALLOW
 import com.android.permissioncontroller.permission.ui.model.AppPermissionViewModel.ButtonType.ALLOW_ALWAYS
 import com.android.permissioncontroller.permission.ui.model.AppPermissionViewModel.ButtonType.ALLOW_FOREGROUND
@@ -66,7 +62,10 @@ import com.android.permissioncontroller.permission.ui.model.AppPermissionViewMod
 import com.android.permissioncontroller.permission.ui.model.AppPermissionViewModel.ButtonType.DENY_FOREGROUND
 import com.android.permissioncontroller.permission.ui.model.AppPermissionViewModel.ButtonType.LOCATION_ACCURACY
 import com.android.permissioncontroller.permission.utils.KotlinUtils
+import com.android.permissioncontroller.permission.utils.KotlinUtils.getDefaultPrecision
+import com.android.permissioncontroller.permission.utils.KotlinUtils.isLocationAccuracyEnabled
 import com.android.permissioncontroller.permission.utils.LocationUtils
+import com.android.permissioncontroller.permission.utils.PermissionMapping
 import com.android.permissioncontroller.permission.utils.SafetyNetLogger
 import com.android.permissioncontroller.permission.utils.Utils
 import com.android.permissioncontroller.permission.utils.navigateSafe
@@ -199,8 +198,8 @@ class AppPermissionViewModel(
     /**
      * A livedata which computes the state of the radio buttons
      */
-    val buttonStateLiveData = object
-        : SmartUpdateMediatorLiveData<@JvmSuppressWildcards Map<ButtonType, ButtonState>>() {
+    val buttonStateLiveData = object :
+        SmartUpdateMediatorLiveData<@JvmSuppressWildcards Map<ButtonType, ButtonState>>() {
 
         private val appPermGroupLiveData = LightAppPermGroupLiveData[packageName, permGroupName,
             user]
@@ -211,7 +210,7 @@ class AppPermissionViewModel(
 
             addSource(appPermGroupLiveData) { appPermGroup ->
                 lightAppPermGroup = appPermGroup
-                if (permGroupName in Utils.STORAGE_SUPERGROUP_PERMISSIONS) {
+                if (permGroupName in PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS) {
                     onMediaPermGroupUpdate(permGroupName, appPermGroup)
                 }
                 if (appPermGroupLiveData.isInitialized && appPermGroup == null) {
@@ -233,8 +232,8 @@ class AppPermissionViewModel(
                 }
             }
 
-            if (permGroupName in Utils.STORAGE_SUPERGROUP_PERMISSIONS) {
-                for (permGroupName in Utils.STORAGE_SUPERGROUP_PERMISSIONS) {
+            if (permGroupName in PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS) {
+                for (permGroupName in PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS) {
                     val liveData = LightAppPermGroupLiveData[packageName, permGroupName, user]
                     mediaStorageSupergroupLiveData[permGroupName] = liveData
                 }
@@ -276,7 +275,7 @@ class AppPermissionViewModel(
             val deniedForegroundState = ButtonState()
 
             askOneTimeState.isShown = group.foreground.isGranted && group.isOneTime
-            askState.isShown = Utils.supportsOneTimeGrant(permGroupName) &&
+            askState.isShown = PermissionMapping.supportsOneTimeGrant(permGroupName) &&
                     !(group.foreground.isGranted && group.isOneTime)
             deniedState.isShown = true
 
@@ -375,9 +374,8 @@ class AppPermissionViewModel(
             }
 
             if (shouldShowLocationAccuracy == null) {
-                shouldShowLocationAccuracy = group.permGroupName == LOCATION &&
-                        group.permissions.containsKey(ACCESS_FINE_LOCATION) &&
-                        isLocationAccuracyEnabled()
+                shouldShowLocationAccuracy = isLocationAccuracyEnabled() &&
+                        group.permissions.containsKey(ACCESS_FINE_LOCATION)
             }
             val locationAccuracyState = ButtonState(isFineLocationChecked(group),
                     true, false, null)
@@ -401,14 +399,18 @@ class AppPermissionViewModel(
             val coarseLocation = group.permissions[ACCESS_COARSE_LOCATION]!!
             val fineLocation = group.permissions[ACCESS_FINE_LOCATION]!!
             // Steps to decide location accuracy toggle state
-            // 1. If none of the FINE and COARSE isSelectedLocationAccuracy flags is set,
-            //    then use default precision from device config.
-            // 2. Otherwise return if FINE isSelectedLocationAccuracy is set to true.
-            return if ((!fineLocation.isSelectedLocationAccuracy &&
-                            !coarseLocation.isSelectedLocationAccuracy)) {
-                getDefaultPrecision()
-            } else {
+            // 1. If FINE or COARSE are granted, then return true if FINE is granted.
+            // 2. Else if FINE or COARSE have the isSelectedLocationAccuracy flag set, then return
+            //    true if FINE isSelectedLocationAccuracy is set.
+            // 3. Else, return default precision from device config.
+            return if (fineLocation.isGrantedIncludingAppOp ||
+                            coarseLocation.isGrantedIncludingAppOp) {
+                fineLocation.isGrantedIncludingAppOp
+            } else if (fineLocation.isSelectedLocationAccuracy ||
+                            coarseLocation.isSelectedLocationAccuracy) {
                 fineLocation.isSelectedLocationAccuracy
+            } else {
+                getDefaultPrecision()
             }
         }
         return false
@@ -664,11 +666,12 @@ class AppPermissionViewModel(
             }
 
             if (shouldGrantForeground) {
-                if (shouldShowLocationAccuracy == true && !isFineLocationChecked(newGroup)) {
-                    newGroup = KotlinUtils.grantForegroundRuntimePermissions(app, newGroup,
-                            filterPermissions = listOf(ACCESS_COARSE_LOCATION))
+                newGroup = if (shouldShowLocationAccuracy == true &&
+                    !isFineLocationChecked(newGroup)) {
+                    KotlinUtils.grantForegroundRuntimePermissions(app, newGroup,
+                        filterPermissions = listOf(ACCESS_COARSE_LOCATION))
                 } else {
-                    newGroup = KotlinUtils.grantForegroundRuntimePermissions(app, newGroup)
+                    KotlinUtils.grantForegroundRuntimePermissions(app, newGroup)
                 }
 
                 if (!wasForegroundGranted) {
@@ -695,17 +698,34 @@ class AppPermissionViewModel(
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.TIRAMISU)
     private fun expandsToStorageSupergroup(group: LightAppPermGroup): Boolean {
         return group.packageInfo.targetSdkVersion <= Build.VERSION_CODES.S_V2 &&
-            group.permGroupName in Utils.STORAGE_SUPERGROUP_PERMISSIONS
+            group.permGroupName in PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS
     }
 
     private fun expandToSupergroup(group: LightAppPermGroup): List<LightAppPermGroup> {
-        val mediaSupergroup = Utils.STORAGE_SUPERGROUP_PERMISSIONS
+        val mediaSupergroup = PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS
                 .mapNotNull { mediaStorageSupergroupPermGroups[it] }
         return if (expandsToStorageSupergroup(group)) {
             mediaSupergroup
         } else {
             listOf(group)
         }
+    }
+
+    private fun getPermGroupIcon(permGroup: String) =
+            Utils.getGroupInfo(permGroup, app.applicationContext)?.icon ?: R.drawable.ic_empty_icon
+
+    private val storagePermGroupIcon = getPermGroupIcon(Manifest.permission_group.STORAGE)
+
+    private val auralPermGroupIcon = if (SdkLevel.isAtLeastT()) {
+        getPermGroupIcon(Manifest.permission_group.READ_MEDIA_AURAL)
+    } else {
+        R.drawable.ic_empty_icon
+    }
+
+    private val visualPermGroupIcon = if (SdkLevel.isAtLeastT()) {
+        getPermGroupIcon(Manifest.permission_group.READ_MEDIA_VISUAL)
+    } else {
+        R.drawable.ic_empty_icon
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
@@ -726,42 +746,42 @@ class AppPermissionViewModel(
         val (iconId, titleId, messageId) = when {
             targetSdk < Build.VERSION_CODES.Q && aural && allow ->
                 Triple(
-                    R.drawable.perm_group_storage,
+                    storagePermGroupIcon,
                     R.string.media_confirm_dialog_title_a_to_p_aural_allow,
                     R.string.media_confirm_dialog_message_a_to_p_aural_allow)
             targetSdk < Build.VERSION_CODES.Q && aural && deny ->
                 Triple(
-                    R.drawable.perm_group_storage,
+                    storagePermGroupIcon,
                     R.string.media_confirm_dialog_title_a_to_p_aural_deny,
                     R.string.media_confirm_dialog_message_a_to_p_aural_deny)
             targetSdk < Build.VERSION_CODES.Q && visual && allow ->
                 Triple(
-                    R.drawable.perm_group_storage,
+                    storagePermGroupIcon,
                     R.string.media_confirm_dialog_title_a_to_p_visual_allow,
                     R.string.media_confirm_dialog_message_a_to_p_visual_allow)
             targetSdk < Build.VERSION_CODES.Q && visual && deny ->
                 Triple(
-                    R.drawable.perm_group_storage,
+                    storagePermGroupIcon,
                     R.string.media_confirm_dialog_title_a_to_p_visual_deny,
                     R.string.media_confirm_dialog_message_a_to_p_visual_deny)
             targetSdk <= Build.VERSION_CODES.S_V2 && aural && allow ->
                 Triple(
-                    R.drawable.perm_group_visual,
+                    visualPermGroupIcon,
                     R.string.media_confirm_dialog_title_q_to_s_aural_allow,
                     R.string.media_confirm_dialog_message_q_to_s_aural_allow)
             targetSdk <= Build.VERSION_CODES.S_V2 && aural && deny ->
                 Triple(
-                    R.drawable.perm_group_visual,
+                    visualPermGroupIcon,
                     R.string.media_confirm_dialog_title_q_to_s_aural_deny,
                     R.string.media_confirm_dialog_message_q_to_s_aural_deny)
             targetSdk <= Build.VERSION_CODES.S_V2 && visual && allow ->
                 Triple(
-                    R.drawable.perm_group_aural,
+                    auralPermGroupIcon,
                     R.string.media_confirm_dialog_title_q_to_s_visual_allow,
                     R.string.media_confirm_dialog_message_q_to_s_visual_allow)
             targetSdk <= Build.VERSION_CODES.S_V2 && visual && deny ->
                 Triple(
-                    R.drawable.perm_group_aural,
+                    auralPermGroupIcon,
                     R.string.media_confirm_dialog_title_q_to_s_visual_deny,
                     R.string.media_confirm_dialog_message_q_to_s_visual_deny)
             else ->

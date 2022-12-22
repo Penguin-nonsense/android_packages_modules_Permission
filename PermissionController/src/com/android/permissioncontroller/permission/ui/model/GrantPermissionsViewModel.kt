@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.android.permissioncontroller.permission.ui.model.v31
+package com.android.permissioncontroller.permission.ui.model
 
 import android.Manifest
 import android.Manifest.permission.ACCESS_COARSE_LOCATION
@@ -89,7 +89,6 @@ import com.android.permissioncontroller.permission.ui.GrantPermissionsActivity.N
 import com.android.permissioncontroller.permission.ui.GrantPermissionsActivity.NO_UPGRADE_BUTTON
 import com.android.permissioncontroller.permission.ui.GrantPermissionsActivity.NO_UPGRADE_OT_AND_DONT_ASK_AGAIN_BUTTON
 import com.android.permissioncontroller.permission.ui.GrantPermissionsActivity.NO_UPGRADE_OT_BUTTON
-import com.android.permissioncontroller.permission.ui.GrantPermissionsActivity.PERMISSION_TO_BIT_SHIFT
 import com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler
 import com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler.DENIED
 import com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler.DENIED_DO_NOT_ASK_AGAIN
@@ -98,10 +97,11 @@ import com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandle
 import com.android.permissioncontroller.permission.ui.ManagePermissionsActivity
 import com.android.permissioncontroller.permission.ui.ManagePermissionsActivity.EXTRA_RESULT_PERMISSION_INTERACTED
 import com.android.permissioncontroller.permission.ui.ManagePermissionsActivity.EXTRA_RESULT_PERMISSION_RESULT
-import com.android.permissioncontroller.permission.ui.handheld.v31.getDefaultPrecision
-import com.android.permissioncontroller.permission.ui.handheld.v31.isLocationAccuracyEnabled
 import com.android.permissioncontroller.permission.utils.AdminRestrictedPermissionsUtils
 import com.android.permissioncontroller.permission.utils.KotlinUtils
+import com.android.permissioncontroller.permission.utils.KotlinUtils.getDefaultPrecision
+import com.android.permissioncontroller.permission.utils.KotlinUtils.isLocationAccuracyEnabled
+import com.android.permissioncontroller.permission.utils.PermissionMapping
 import com.android.permissioncontroller.permission.utils.SafetyNetLogger
 import com.android.permissioncontroller.permission.utils.Utils
 
@@ -130,7 +130,6 @@ class GrantPermissionsViewModel(
     private val permissionPolicy = dpm.getPermissionPolicy(null)
     private val permGroupsToSkip = mutableListOf<String>()
     private var groupStates = mutableMapOf<Pair<String, Boolean>, GroupState>()
-    private var isFirstTimeRequestingFineAndCoarse: Boolean = false
 
     private var autoGrantNotifier: AutoGrantPermissionsNotifier? = null
     private fun getAutoGrantNotifier(): AutoGrantPermissionsNotifier {
@@ -319,7 +318,7 @@ class GrantPermissionsViewModel(
                 buttonVisibilities[ALLOW_BUTTON] = true
                 buttonVisibilities[DENY_BUTTON] = true
                 buttonVisibilities[ALLOW_ONE_TIME_BUTTON] =
-                    Utils.supportsOneTimeGrant(groupName)
+                    PermissionMapping.supportsOneTimeGrant(groupName)
                 var message = RequestMessage.FG_MESSAGE
                 // Whether or not to use the foreground, background, or no detail message.
                 // null ==
@@ -441,7 +440,7 @@ class GrantPermissionsViewModel(
                 // Show location permission dialogs based on location permissions
                 val locationVisibilities = MutableList(NEXT_LOCATION_DIALOG) { false }
                 if (groupState.group.permGroupName == LOCATION && isLocationAccuracyEnabled() &&
-                        packageInfo.targetSdkVersion >= Build.VERSION_CODES.S) {
+                    packageInfo.targetSdkVersion >= Build.VERSION_CODES.S) {
                     if (needFgPermissions) {
                         locationVisibilities[LOCATION_ACCURACY_LAYOUT] = true
                         if (fgState != null &&
@@ -462,11 +461,6 @@ class GrantPermissionsViewModel(
                                             "with ACCESS_COARSE_LOCATION.")
                                     value = null
                                     return
-                                }
-                                if (coarseLocationPerm?.isOneTime == false &&
-                                        !coarseLocationPerm.isUserSet &&
-                                        !coarseLocationPerm.isUserFixed) {
-                                    isFirstTimeRequestingFineAndCoarse = true
                                 }
                                 // Normal flow with both Coarse and Fine locations
                                 locationVisibilities[DIALOG_WITH_BOTH_LOCATIONS] = true
@@ -505,7 +499,8 @@ class GrantPermissionsViewModel(
                         continue
                     }
                     // If app is <T and requests STORAGE, grant dialogs has special text
-                    if (groupState.group.permGroupName in Utils.STORAGE_SUPERGROUP_PERMISSIONS) {
+                    if (groupState.group.permGroupName in
+                        PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS) {
                         if (packageInfo.targetSdkVersion < Build.VERSION_CODES.Q) {
                             message = RequestMessage.STORAGE_SUPERGROUP_MESSAGE_PRE_Q
                         } else if (packageInfo.targetSdkVersion <= Build.VERSION_CODES.S_V2) {
@@ -734,7 +729,7 @@ class GrantPermissionsViewModel(
                 if (isBackground) {
                     KotlinUtils.grantBackgroundRuntimePermissions(app, group, listOf(perm))
                 } else {
-                    KotlinUtils.grantForegroundRuntimePermissions(app, group, listOf(perm))
+                    KotlinUtils.grantForegroundRuntimePermissions(app, group, listOf(perm), group.isOneTime)
                 }
                 KotlinUtils.setGroupFlags(app, group, FLAG_PERMISSION_USER_SET to false,
                     FLAG_PERMISSION_USER_FIXED to false, filterPermissions = listOf(perm))
@@ -822,9 +817,9 @@ class GrantPermissionsViewModel(
 
         // If this is a legacy app, and a storage group is requested: request all storage groups
         if (!alreadyRequestedStorageGroupsIfNeeded &&
-            groupName in Utils.STORAGE_SUPERGROUP_PERMISSIONS &&
+            groupName in PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS &&
             packageInfo.targetSdkVersion <= Build.VERSION_CODES.S_V2) {
-            for (groupName in Utils.STORAGE_SUPERGROUP_PERMISSIONS) {
+            for (groupName in PermissionMapping.STORAGE_SUPERGROUP_PERMISSIONS) {
                 val groupPerms = appPermGroupLiveDatas[groupName]
                     ?.value?.allPermissions?.keys?.toList()
                 onPermissionGrantResult(groupName, groupPerms, result, true)
@@ -1235,18 +1230,12 @@ class GrantPermissionsViewModel(
                     "initialized", IllegalStateException())
             return
         }
-        var selectedLocations = 0
-        // log permissions if it's 1) first time requesting both locations OR 2) upgrade flow
-        if (isFirstTimeRequestingFineAndCoarse ||
-                selectedPrecision ==
-                    1 shl PERMISSION_TO_BIT_SHIFT[ACCESS_FINE_LOCATION]!!) {
-            selectedLocations = selectedPrecision
-        }
+
         PermissionControllerStatsLog.write(GRANT_PERMISSIONS_ACTIVITY_BUTTON_ACTIONS,
                 groupName, packageInfo.uid, packageName, presentedButtons, clickedButton, sessionId,
-                packageInfo.targetSdkVersion, selectedLocations)
+                packageInfo.targetSdkVersion, selectedPrecision)
         Log.v(LOG_TAG, "Logged buttons presented and clicked permissionGroupName=" +
-                "$groupName uid=${packageInfo.uid} selectedLocations=$selectedLocations " +
+                "$groupName uid=${packageInfo.uid} selectedPrecision=$selectedPrecision " +
                 "package=$packageName presentedButtons=$presentedButtons " +
                 "clickedButton=$clickedButton sessionId=$sessionId " +
                 "targetSdk=${packageInfo.targetSdkVersion}")

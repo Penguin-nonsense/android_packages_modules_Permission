@@ -17,9 +17,9 @@
 package com.android.permission.access
 
 import android.content.pm.PermissionGroupInfo
+import com.android.permission.access.collection.* // ktlint-disable no-wildcard-imports
 import com.android.permission.access.data.Permission
 import com.android.permission.access.external.PackageState
-import com.android.permission.access.util.* // ktlint-disable no-wildcard-imports
 
 class AccessState private constructor(
     val systemState: SystemState,
@@ -33,26 +33,34 @@ class AccessState private constructor(
 class SystemState private constructor(
     val userIds: IntSet,
     val packageStates: IndexedMap<String, PackageState>,
+    val disabledSystemPackageStates: IndexedMap<String, PackageState>,
     val appIds: IntMap<IndexedListSet<String>>,
     val permissionGroups: IndexedMap<String, PermissionGroupInfo>,
     val permissionTrees: IndexedMap<String, Permission>,
     val permissions: IndexedMap<String, Permission>
 ) : WritableState() {
-    constructor() : this(IntSet(), IndexedMap(), IntMap(), IndexedMap(), IndexedMap(), IndexedMap())
+    constructor() : this(
+        IntSet(), IndexedMap(), IndexedMap(), IntMap(), IndexedMap(), IndexedMap(), IndexedMap()
+    )
 
     fun copy(): SystemState =
         SystemState(
-            userIds.copy(), packageStates.copy { it }, appIds.copy { it.copy() },
-            permissionGroups.copy { it }, permissionTrees.copy { it }, permissions.copy { it }
+            userIds.copy(), packageStates.copy { it }, disabledSystemPackageStates.copy { it },
+            appIds.copy { it.copy() }, permissionGroups.copy { it },
+            permissionTrees.copy { it }, permissions.copy { it }
         )
 }
 
 class UserState private constructor(
-    val permissionFlags: IntMap<IndexedMap<String, Int>>
+    // A map of (appId to a map of (permissionName to permissionFlags))
+    val permissionFlags: IntMap<IndexedMap<String, Int>>,
+    val uidAppOpModes: IntMap<IndexedMap<String, Int>>,
+    val packageAppOpModes: IndexedMap<String, IndexedMap<String, Int>>
 ) : WritableState() {
-    constructor() : this(IntMap())
+    constructor() : this(IntMap(), IntMap(), IndexedMap())
 
-    fun copy(): UserState = UserState(permissionFlags.copy { it.copy { it } })
+    fun copy(): UserState = UserState(permissionFlags.copy { it.copy { it } },
+        uidAppOpModes.copy { it.copy { it } }, packageAppOpModes.copy { it.copy { it } })
 }
 
 object WriteMode {
