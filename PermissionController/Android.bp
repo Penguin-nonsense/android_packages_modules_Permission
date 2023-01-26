@@ -140,6 +140,7 @@ android_app {
         "modules-utils-build_system",
         "safety-center-resources-lib",
         "lottie",
+        "safety-label"
     ],
 
     proto: {
@@ -154,8 +155,6 @@ android_app {
     optimize: {
         proguard_flags_files: ["proguard.flags"],
     },
-
-    plugins: ["java_api_finder"],
 
     kotlincflags: ["-Xjvm-default=enable"],
 

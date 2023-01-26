@@ -44,7 +44,7 @@ import android.safetycenter.cts.testing.SafetySourceCtsData.Companion.ISSUE_TYPE
 import android.safetycenter.cts.testing.SafetySourceCtsData.Companion.RECOMMENDATION_ISSUE_ACTION_ID
 import android.safetycenter.cts.testing.SafetySourceCtsData.Companion.RECOMMENDATION_ISSUE_ID
 import android.util.ArrayMap
-import com.android.safetycenter.internaldata.SafetyCenterEntryGroupId
+import com.android.modules.utils.build.SdkLevel
 import com.android.safetycenter.internaldata.SafetyCenterEntryId
 import com.android.safetycenter.internaldata.SafetyCenterIds
 import com.android.safetycenter.internaldata.SafetyCenterIssueActionId
@@ -72,6 +72,19 @@ class SafetyCenterCtsData(context: Context) {
                 safetyCenterResourcesContext.getStringByName(
                     "overall_severity_level_ok_review_summary"))
             .setSeverityLevel(OVERALL_SEVERITY_LEVEL_UNKNOWN)
+            .build()
+
+    /**
+     * Returns a [SafetyCenterStatus] with one alert and the given [statusResource] and
+     * [overallSeverityLevel].
+     */
+    fun safetyCenterStatusOneAlert(
+        statusResource: String,
+        overallSeverityLevel: Int
+    ): SafetyCenterStatus =
+        SafetyCenterStatus.Builder(
+                safetyCenterResourcesContext.getStringByName(statusResource), getAlertString(1))
+            .setSeverityLevel(overallSeverityLevel)
             .build()
 
     /**
@@ -213,7 +226,11 @@ class SafetyCenterCtsData(context: Context) {
      * Returns an information [SafetyCenterIssue] for the given source and user id that is
      * consistent with information [SafetySourceIssue]s used in [SafetySourceCtsData].
      */
-    fun safetyCenterIssueInformation(sourceId: String, userId: Int = UserHandle.myUserId()) =
+    fun safetyCenterIssueInformation(
+        sourceId: String,
+        userId: Int = UserHandle.myUserId(),
+        attributionTitle: String? = "OK"
+    ) =
         SafetyCenterIssue.Builder(
                 issueId(sourceId, INFORMATION_ISSUE_ID, userId = userId),
                 "Information issue title",
@@ -231,13 +248,18 @@ class SafetyCenterCtsData(context: Context) {
                             "Review",
                             safetySourceCtsData.testActivityRedirectPendingIntent)
                         .build()))
+            .apply { if (SdkLevel.isAtLeastU()) setAttributionTitle(attributionTitle) }
             .build()
 
     /**
      * Returns a recommendation [SafetyCenterIssue] for the given source and user id that is
      * consistent with recommendation [SafetySourceIssue]s used in [SafetySourceCtsData].
      */
-    fun safetyCenterIssueRecommendation(sourceId: String, userId: Int = UserHandle.myUserId()) =
+    fun safetyCenterIssueRecommendation(
+        sourceId: String,
+        userId: Int = UserHandle.myUserId(),
+        attributionTitle: String? = "OK"
+    ) =
         SafetyCenterIssue.Builder(
                 issueId(sourceId, RECOMMENDATION_ISSUE_ID, userId = userId),
                 "Recommendation issue title",
@@ -254,6 +276,7 @@ class SafetyCenterCtsData(context: Context) {
                             "See issue",
                             safetySourceCtsData.testActivityRedirectPendingIntent)
                         .build()))
+            .apply { if (SdkLevel.isAtLeastU()) setAttributionTitle(attributionTitle) }
             .build()
 
     /**
@@ -263,7 +286,8 @@ class SafetyCenterCtsData(context: Context) {
     fun safetyCenterIssueCritical(
         sourceId: String,
         isActionInFlight: Boolean = false,
-        userId: Int = UserHandle.myUserId()
+        userId: Int = UserHandle.myUserId(),
+        attributionTitle: String? = "OK"
     ) =
         SafetyCenterIssue.Builder(
                 issueId(sourceId, CRITICAL_ISSUE_ID, userId = userId),
@@ -280,6 +304,7 @@ class SafetyCenterCtsData(context: Context) {
                         .setWillResolve(true)
                         .setIsInFlight(isActionInFlight)
                         .build()))
+            .apply { if (SdkLevel.isAtLeastU()) setAttributionTitle(attributionTitle) }
             .build()
 
     /**
@@ -312,13 +337,6 @@ class SafetyCenterCtsData(context: Context) {
                 emptyList(),
                 emptyList(),
                 emptyList())
-
-        /** Creates an ID for a Safety Center entry group. */
-        fun entryGroupId(sourcesGroupId: String) =
-            SafetyCenterIds.encodeToString(
-                SafetyCenterEntryGroupId.newBuilder()
-                    .setSafetySourcesGroupId(sourcesGroupId)
-                    .build())
 
         /** Creates an ID for a Safety Center entry. */
         fun entryId(sourceId: String, userId: Int = UserHandle.myUserId()) =
@@ -363,5 +381,39 @@ class SafetyCenterCtsData(context: Context) {
                             .build())
                     .setSafetySourceIssueActionId(sourceIssueActionId)
                     .build())
+
+        /**
+         * On U+, returns a new [SafetyCenterData] with the dismissed issues set. Prior to U,
+         * returns the passed in [SafetyCenterData].
+         */
+        fun SafetyCenterData.withDismissedIssuesIfAtLeastU(
+            dismissedIssues: List<SafetyCenterIssue>
+        ): SafetyCenterData {
+            return if (SdkLevel.isAtLeastU())
+                SafetyCenterData(
+                    status, issues, entriesOrGroups, staticEntryGroups, dismissedIssues)
+            else this
+        }
+
+        /**
+         * On U+, returns a new [SafetyCenterData] with [SafetyCenterIssue]s having the
+         * [attributionTitle]. Prior to U, returns the passed in [SafetyCenterData].
+         */
+        fun SafetyCenterData.withAttributionTitleInIssuesIfAtLeastU(
+            attributionTitle: String?
+        ): SafetyCenterData {
+            return if (SdkLevel.isAtLeastU()) {
+                val issuesWithAttributionTitle =
+                    this.issues.map {
+                        SafetyCenterIssue.Builder(it).setAttributionTitle(attributionTitle).build()
+                    }
+                SafetyCenterData(
+                    this.status,
+                    issuesWithAttributionTitle,
+                    this.entriesOrGroups,
+                    this.staticEntryGroups,
+                    this.dismissedIssues)
+            } else this
+        }
     }
 }

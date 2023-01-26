@@ -43,11 +43,11 @@ import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.DYNAMIC_BAREBONE_
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.DYNAMIC_DISABLED_ID
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.DYNAMIC_GROUP_ID
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.DYNAMIC_HIDDEN_ID
-import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.DYNAMIC_IN_RIGID_ID
+import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.DYNAMIC_IN_STATELESS_ID
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.ISSUE_ONLY_ALL_OPTIONAL_ID
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.ISSUE_ONLY_ALL_PROFILE_SOURCE_ID
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.ISSUE_ONLY_BAREBONE_ID
-import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.ISSUE_ONLY_IN_RIGID_ID
+import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.ISSUE_ONLY_IN_STATELESS_ID
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.ISSUE_ONLY_SOURCE_ALL_PROFILE_CONFIG
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.ISSUE_ONLY_SOURCE_CONFIG
 import android.safetycenter.cts.testing.SafetyCenterCtsConfigs.SINGLE_SOURCE_ALL_PROFILE_CONFIG
@@ -124,11 +124,13 @@ class SafetyCenterMultiUsersTest {
     private val primaryProfileOnlyIssues =
         listOf(
             safetyCenterCtsData.safetyCenterIssueCritical(DYNAMIC_BAREBONE_ID),
-            safetyCenterCtsData.safetyCenterIssueCritical(ISSUE_ONLY_BAREBONE_ID),
+            safetyCenterCtsData.safetyCenterIssueCritical(
+                ISSUE_ONLY_BAREBONE_ID, attributionTitle = null),
             safetyCenterCtsData.safetyCenterIssueRecommendation(DYNAMIC_DISABLED_ID),
-            safetyCenterCtsData.safetyCenterIssueRecommendation(ISSUE_ONLY_ALL_OPTIONAL_ID),
-            safetyCenterCtsData.safetyCenterIssueInformation(DYNAMIC_IN_RIGID_ID),
-            safetyCenterCtsData.safetyCenterIssueInformation(ISSUE_ONLY_IN_RIGID_ID))
+            safetyCenterCtsData.safetyCenterIssueRecommendation(
+                ISSUE_ONLY_ALL_OPTIONAL_ID, attributionTitle = null),
+            safetyCenterCtsData.safetyCenterIssueInformation(DYNAMIC_IN_STATELESS_ID),
+            safetyCenterCtsData.safetyCenterIssueInformation(ISSUE_ONLY_IN_STATELESS_ID))
 
     private val dynamicBareboneDefault =
         safetyCenterCtsData.safetyCenterEntryDefault(DYNAMIC_BAREBONE_ID)
@@ -175,7 +177,7 @@ class SafetyCenterMultiUsersTest {
         get() = safetyCenterEntryOkForWork(DYNAMIC_HIDDEN_ID, deviceState.workProfile().id())
 
     private val staticGroupBuilder =
-        SafetyCenterEntryGroup.Builder(SafetyCenterCtsData.entryGroupId(STATIC_GROUP_ID), "OK")
+        SafetyCenterEntryGroup.Builder(STATIC_GROUP_ID, "OK")
             .setSeverityLevel(ENTRY_SEVERITY_LEVEL_UNSPECIFIED)
             .setSeverityUnspecifiedIconType(SEVERITY_UNSPECIFIED_ICON_TYPE_PRIVACY)
             .setSummary("OK")
@@ -212,19 +214,19 @@ class SafetyCenterMultiUsersTest {
                 .setEnabled(false)
                 .build()
 
-    private val rigidEntry =
+    private val staticEntry =
         SafetyCenterStaticEntry.Builder("OK")
             .setSummary("OK")
             .setPendingIntent(safetySourceCtsData.testActivityRedirectPendingIntent)
             .build()
 
-    private val rigidEntryUpdated =
+    private val staticEntryUpdated =
         SafetyCenterStaticEntry.Builder("Unspecified title")
             .setSummary("Unspecified summary")
             .setPendingIntent(safetySourceCtsData.testActivityRedirectPendingIntent)
             .build()
 
-    private val rigidEntryForWorkBuilder
+    private val staticEntryForWorkBuilder
         get() =
             SafetyCenterStaticEntry.Builder("Paste")
                 .setSummary("OK")
@@ -232,18 +234,18 @@ class SafetyCenterMultiUsersTest {
                     createTestActivityRedirectPendingIntentForUser(
                         deviceState.workProfile().userHandle()))
 
-    private val rigidEntryForWork
-        get() = rigidEntryForWorkBuilder.build()
+    private val staticEntryForWork
+        get() = staticEntryForWorkBuilder.build()
 
-    private val rigidEntryForWorkPaused
+    private val staticEntryForWorkPaused
         get() =
-            rigidEntryForWorkBuilder
+            staticEntryForWorkBuilder
                 // TODO(b/233188021): This needs to use the Enterprise API to override the "work"
                 //  keyword.
                 .setSummary(safetyCenterResourcesContext.getStringByName("work_profile_paused"))
                 .build()
 
-    private val rigidEntryForWorkUpdated =
+    private val staticEntryForWorkUpdated =
         SafetyCenterStaticEntry.Builder("Unspecified title for Work")
             .setSummary("Unspecified summary")
             .setPendingIntent(safetySourceCtsData.testActivityRedirectPendingIntent)
@@ -392,8 +394,7 @@ class SafetyCenterMultiUsersTest {
                 emptyList(),
                 listOf(
                     SafetyCenterEntryOrGroup(
-                        SafetyCenterEntryGroup.Builder(
-                                SafetyCenterCtsData.entryGroupId(DYNAMIC_GROUP_ID), "OK")
+                        SafetyCenterEntryGroup.Builder(DYNAMIC_GROUP_ID, "OK")
                             .setSeverityLevel(ENTRY_SEVERITY_LEVEL_UNKNOWN)
                             .setSummary(
                                 safetyCenterResourcesContext.getStringByName(
@@ -404,7 +405,7 @@ class SafetyCenterMultiUsersTest {
                         staticGroupBuilder
                             .setEntries(listOf(staticBarebone, staticAllOptional))
                             .build())),
-                listOf(SafetyCenterStaticEntryGroup("OK", listOf(rigidEntry, rigidEntry))))
+                listOf(SafetyCenterStaticEntryGroup("OK", listOf(staticEntry, staticEntry))))
         assertThat(apiSafetyCenterData).isEqualTo(safetyCenterDataFromComplexConfig)
     }
 
@@ -422,8 +423,7 @@ class SafetyCenterMultiUsersTest {
                 emptyList(),
                 listOf(
                     SafetyCenterEntryOrGroup(
-                        SafetyCenterEntryGroup.Builder(
-                                SafetyCenterCtsData.entryGroupId(DYNAMIC_GROUP_ID), "OK")
+                        SafetyCenterEntryGroup.Builder(DYNAMIC_GROUP_ID, "OK")
                             .setSeverityLevel(ENTRY_SEVERITY_LEVEL_UNKNOWN)
                             .setSummary(
                                 safetyCenterResourcesContext.getStringByName(
@@ -442,7 +442,7 @@ class SafetyCenterMultiUsersTest {
                 listOf(
                     SafetyCenterStaticEntryGroup(
                         "OK",
-                        listOf(rigidEntry, rigidEntryForWork, rigidEntry, rigidEntryForWork))))
+                        listOf(staticEntry, staticEntryForWork, staticEntry, staticEntryForWork))))
         assertThat(apiSafetyCenterData).isEqualTo(safetyCenterDataFromComplexConfig)
     }
 
@@ -461,8 +461,7 @@ class SafetyCenterMultiUsersTest {
                 primaryProfileOnlyIssues,
                 listOf(
                     SafetyCenterEntryOrGroup(
-                        SafetyCenterEntryGroup.Builder(
-                                SafetyCenterCtsData.entryGroupId(DYNAMIC_GROUP_ID), "OK")
+                        SafetyCenterEntryGroup.Builder(DYNAMIC_GROUP_ID, "OK")
                             .setSeverityLevel(ENTRY_SEVERITY_LEVEL_CRITICAL_WARNING)
                             .setSummary("Critical summary")
                             .setEntries(
@@ -481,7 +480,10 @@ class SafetyCenterMultiUsersTest {
                     SafetyCenterStaticEntryGroup(
                         "OK",
                         listOf(
-                            rigidEntryUpdated, rigidEntryForWork, rigidEntry, rigidEntryForWork))))
+                            staticEntryUpdated,
+                            staticEntryForWork,
+                            staticEntry,
+                            staticEntryForWork))))
         assertThat(apiSafetyCenterData).isEqualTo(safetyCenterDataFromComplexConfig)
     }
 
@@ -501,25 +503,26 @@ class SafetyCenterMultiUsersTest {
                 safetyCenterCtsData.safetyCenterStatusCritical(11),
                 listOf(
                     safetyCenterCtsData.safetyCenterIssueCritical(DYNAMIC_BAREBONE_ID),
-                    safetyCenterCtsData.safetyCenterIssueCritical(ISSUE_ONLY_BAREBONE_ID),
+                    safetyCenterCtsData.safetyCenterIssueCritical(
+                        ISSUE_ONLY_BAREBONE_ID, attributionTitle = null),
                     safetyCenterCtsData.safetyCenterIssueRecommendation(DYNAMIC_DISABLED_ID),
-                    safetyCenterCtsData.safetyCenterIssueRecommendation(ISSUE_ONLY_ALL_OPTIONAL_ID),
+                    safetyCenterCtsData.safetyCenterIssueRecommendation(
+                        ISSUE_ONLY_ALL_OPTIONAL_ID, attributionTitle = null),
                     safetyCenterCtsData.safetyCenterIssueInformation(
                         DYNAMIC_DISABLED_ID, managedUserId),
                     safetyCenterCtsData.safetyCenterIssueInformation(
                         DYNAMIC_HIDDEN_ID, managedUserId),
                     safetyCenterCtsData.safetyCenterIssueInformation(
-                        ISSUE_ONLY_ALL_OPTIONAL_ID, managedUserId),
-                    safetyCenterCtsData.safetyCenterIssueInformation(DYNAMIC_IN_RIGID_ID),
+                        ISSUE_ONLY_ALL_OPTIONAL_ID, managedUserId, attributionTitle = null),
+                    safetyCenterCtsData.safetyCenterIssueInformation(DYNAMIC_IN_STATELESS_ID),
                     safetyCenterCtsData.safetyCenterIssueInformation(
-                        DYNAMIC_IN_RIGID_ID, managedUserId),
-                    safetyCenterCtsData.safetyCenterIssueInformation(ISSUE_ONLY_IN_RIGID_ID),
+                        DYNAMIC_IN_STATELESS_ID, managedUserId),
+                    safetyCenterCtsData.safetyCenterIssueInformation(ISSUE_ONLY_IN_STATELESS_ID),
                     safetyCenterCtsData.safetyCenterIssueInformation(
-                        ISSUE_ONLY_IN_RIGID_ID, managedUserId)),
+                        ISSUE_ONLY_IN_STATELESS_ID, managedUserId)),
                 listOf(
                     SafetyCenterEntryOrGroup(
-                        SafetyCenterEntryGroup.Builder(
-                                SafetyCenterCtsData.entryGroupId(DYNAMIC_GROUP_ID), "OK")
+                        SafetyCenterEntryGroup.Builder(DYNAMIC_GROUP_ID, "OK")
                             .setSeverityLevel(ENTRY_SEVERITY_LEVEL_CRITICAL_WARNING)
                             .setSummary("Critical summary")
                             .setEntries(
@@ -539,10 +542,10 @@ class SafetyCenterMultiUsersTest {
                     SafetyCenterStaticEntryGroup(
                         "OK",
                         listOf(
-                            rigidEntryUpdated,
-                            rigidEntryForWorkUpdated,
-                            rigidEntry,
-                            rigidEntryForWork))))
+                            staticEntryUpdated,
+                            staticEntryForWorkUpdated,
+                            staticEntry,
+                            staticEntryForWork))))
         assertThat(apiSafetyCenterData).isEqualTo(safetyCenterDataFromComplexConfig)
     }
 
@@ -565,8 +568,7 @@ class SafetyCenterMultiUsersTest {
                 primaryProfileOnlyIssues,
                 listOf(
                     SafetyCenterEntryOrGroup(
-                        SafetyCenterEntryGroup.Builder(
-                                SafetyCenterCtsData.entryGroupId(DYNAMIC_GROUP_ID), "OK")
+                        SafetyCenterEntryGroup.Builder(DYNAMIC_GROUP_ID, "OK")
                             .setSeverityLevel(ENTRY_SEVERITY_LEVEL_CRITICAL_WARNING)
                             .setSummary("Critical summary")
                             .setEntries(
@@ -588,10 +590,10 @@ class SafetyCenterMultiUsersTest {
                     SafetyCenterStaticEntryGroup(
                         "OK",
                         listOf(
-                            rigidEntryUpdated,
-                            rigidEntryForWorkPaused,
-                            rigidEntry,
-                            rigidEntryForWorkPaused))))
+                            staticEntryUpdated,
+                            staticEntryForWorkPaused,
+                            staticEntry,
+                            staticEntryForWorkPaused))))
         assertThat(apiSafetyCenterData).isEqualTo(safetyCenterDataFromComplexConfig)
     }
 
@@ -630,8 +632,7 @@ class SafetyCenterMultiUsersTest {
                 emptyList(),
                 listOf(
                     SafetyCenterEntryOrGroup(
-                        SafetyCenterEntryGroup.Builder(
-                                SafetyCenterCtsData.entryGroupId(SINGLE_SOURCE_GROUP_ID), "OK")
+                        SafetyCenterEntryGroup.Builder(SINGLE_SOURCE_GROUP_ID, "OK")
                             .setSeverityLevel(ENTRY_SEVERITY_LEVEL_UNKNOWN)
                             .setSummary(
                                 safetyCenterResourcesContext.getStringByName(
@@ -925,9 +926,10 @@ class SafetyCenterMultiUsersTest {
         safetyCenterCtsHelper.setData(
             ISSUE_ONLY_ALL_OPTIONAL_ID,
             SafetySourceCtsData.issuesOnly(safetySourceCtsData.recommendationGeneralIssue))
-        safetyCenterCtsHelper.setData(DYNAMIC_IN_RIGID_ID, safetySourceCtsData.unspecifiedWithIssue)
         safetyCenterCtsHelper.setData(
-            ISSUE_ONLY_IN_RIGID_ID,
+            DYNAMIC_IN_STATELESS_ID, safetySourceCtsData.unspecifiedWithIssue)
+        safetyCenterCtsHelper.setData(
+            ISSUE_ONLY_IN_STATELESS_ID,
             SafetySourceCtsData.issuesOnly(safetySourceCtsData.informationIssue))
     }
 
@@ -942,9 +944,9 @@ class SafetyCenterMultiUsersTest {
             ISSUE_ONLY_ALL_OPTIONAL_ID,
             SafetySourceCtsData.issuesOnly(safetySourceCtsData.informationIssue))
         managedSafetyCenterManager.setSafetySourceDataWithInteractAcrossUsersPermission(
-            DYNAMIC_IN_RIGID_ID, safetySourceCtsData.unspecifiedWithIssueForWork)
+            DYNAMIC_IN_STATELESS_ID, safetySourceCtsData.unspecifiedWithIssueForWork)
         managedSafetyCenterManager.setSafetySourceDataWithInteractAcrossUsersPermission(
-            ISSUE_ONLY_IN_RIGID_ID,
+            ISSUE_ONLY_IN_STATELESS_ID,
             SafetySourceCtsData.issuesOnly(safetySourceCtsData.informationIssue))
     }
 }

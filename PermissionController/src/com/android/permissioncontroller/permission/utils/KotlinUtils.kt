@@ -21,6 +21,8 @@ import android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
 import android.Manifest.permission.ACCESS_FINE_LOCATION
 import android.Manifest.permission.BACKUP
 import android.Manifest.permission.POST_NOTIFICATIONS
+import android.Manifest.permission.READ_MEDIA_IMAGES
+import android.Manifest.permission.READ_MEDIA_VIDEO
 import android.Manifest.permission_group.NOTIFICATIONS
 import android.app.ActivityManager
 import android.app.AppOpsManager
@@ -35,7 +37,6 @@ import android.content.Intent
 import android.content.Intent.ACTION_MAIN
 import android.content.Intent.CATEGORY_INFO
 import android.content.Intent.CATEGORY_LAUNCHER
-import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.PackageManager.FLAG_PERMISSION_AUTO_REVOKED
 import android.content.pm.PackageManager.FLAG_PERMISSION_ONE_TIME
@@ -51,8 +52,7 @@ import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
-import android.healthconnect.HealthPermissions.HEALTH_PERMISSION_GROUP
-import android.healthconnect.HealthPermissions.MANAGE_HEALTH_PERMISSIONS
+import android.healthconnect.HealthConnectManager
 import android.os.Build
 import android.os.Bundle
 import android.os.UserHandle
@@ -88,6 +88,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+
 /**
  * A set of util functions designed to work with kotlin, though they can work with java, as well.
  */
@@ -135,8 +136,18 @@ object KotlinUtils {
     /** Whether to show 7-day toggle in privacy hub.  */
     private const val PRIVACY_DASHBOARD_7_DAY_TOGGLE = "privacy_dashboard_7_day_toggle"
 
+    /** Whether to show permission rationale in permission settings and grant dialog.  */
+    private const val PRIVACY_PERMISSION_RATIONALE_ENABLED = "privacy_permission_rationale_enabled"
+
+    /** Whether to placeholder safety label data in permission settings and grant dialog.  */
+    private const val PRIVACY_PLACEHOLDER_SAFETY_LABEL_DATA_ENABLED =
+        "privacy_placeholder_safety_label_data_enabled"
+
     /** Default location precision */
     private const val PROPERTY_LOCATION_PRECISION = "location_precision"
+
+    /** Whether to show the photo picker option in permission prompts.  */
+    private const val PROPERTY_PHOTO_PICKER_PROMPT_ENABLED = "photo_picker_prompt_enabled"
 
     /**
      * Whether the Permissions Hub 2 flag is enabled
@@ -228,6 +239,38 @@ object KotlinUtils {
     fun is7DayToggleEnabled(): Boolean {
         return SdkLevel.isAtLeastS() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
             PRIVACY_DASHBOARD_7_DAY_TOGGLE, false)
+    }
+
+    /**
+     * Whether the Photo Picker Prompt is enabled
+     *
+     * @return `true` iff the Location Access Check is enabled.
+     */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
+    fun isPhotoPickerPromptEnabled(): Boolean {
+        return SdkLevel.isAtLeastU() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_PHOTO_PICKER_PROMPT_ENABLED, false)
+    }
+
+    /*
+     * Whether we should enable the permission rationale in permission settings and grant dialog
+     *
+     * @return whether the flag is enabled
+     */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
+    fun isPermissionRationaleEnabled(): Boolean {
+        return SdkLevel.isAtLeastU() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PRIVACY_PERMISSION_RATIONALE_ENABLED, false)
+    }
+
+    /**
+     * Whether we should use placeholder safety label data
+     *
+     * @return whether the flag is enabled
+     */
+    fun isPlaceholderSafetyLabelDataEnabled(): Boolean {
+        return DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PRIVACY_PLACEHOLDER_SAFETY_LABEL_DATA_ENABLED, false)
     }
 
     /**
@@ -498,6 +541,20 @@ object KotlinUtils {
     }
 
     /**
+     * Return a specific MIME type, if a set of permissions is associated with one
+     */
+    fun getMimeTypeForPermissions(permissions: List<String>): String? {
+        if (permissions.contains(READ_MEDIA_IMAGES) && !permissions.contains(READ_MEDIA_VIDEO)) {
+            return "image/*"
+        }
+        if (permissions.contains(READ_MEDIA_VIDEO) && !permissions.contains(READ_MEDIA_IMAGES)) {
+            return "video/*"
+        }
+
+        return null
+    }
+
+    /**
      * Determines if an app is R or above, or if it is Q-, and has auto revoke enabled
      *
      * @param app The currenct application
@@ -607,9 +664,12 @@ object KotlinUtils {
         app: Application,
         group: LightAppPermGroup,
         filterPermissions: List<String> = group.permissions.keys.toList(),
-        isOneTime: Boolean = false
+        isOneTime: Boolean = false,
+        userFixed: Boolean = false,
+        withoutAppOps: Boolean = false,
     ): LightAppPermGroup {
-        return grantRuntimePermissions(app, group, false, isOneTime, filterPermissions)
+        return grantRuntimePermissions(app, group, false, isOneTime, userFixed,
+            withoutAppOps, filterPermissions)
     }
 
     /**
@@ -631,7 +691,8 @@ object KotlinUtils {
         group: LightAppPermGroup,
         filterPermissions: List<String> = group.permissions.keys.toList()
     ): LightAppPermGroup {
-        return grantRuntimePermissions(app, group, true, false, filterPermissions)
+        return grantRuntimePermissions(app, group, true, false, false, false,
+            filterPermissions)
     }
 
     private fun grantRuntimePermissions(
@@ -639,16 +700,18 @@ object KotlinUtils {
         group: LightAppPermGroup,
         grantBackground: Boolean,
         isOneTime: Boolean = false,
-        filterPermissions: List<String> = group.permissions.keys.toList()
+        userFixed: Boolean = false,
+        withoutAppOps: Boolean = false,
+        filterPermissions: List<String> = group.permissions.keys.toList(),
     ): LightAppPermGroup {
-        val wasOneTime = group.isOneTime
         val newPerms = group.permissions.toMutableMap()
         var shouldKillForAnyPermission = false
         for (permName in filterPermissions) {
             val perm = group.permissions[permName] ?: continue
             val isBackgroundPerm = permName in group.backgroundPermNames
             if (isBackgroundPerm == grantBackground) {
-                val (newPerm, shouldKill) = grantRuntimePermission(app, perm, isOneTime, group)
+                val (newPerm, shouldKill) = grantRuntimePermission(app, perm, group, isOneTime,
+                    userFixed, withoutAppOps)
                 newPerms[newPerm.name] = newPerm
                 shouldKillForAnyPermission = shouldKillForAnyPermission || shouldKill
             }
@@ -657,7 +720,7 @@ object KotlinUtils {
             val user = UserHandle.getUserHandleForUid(group.packageInfo.uid)
             for (groupPerm in group.allPermissions.values) {
                 var permFlags = groupPerm!!.flags
-                permFlags = permFlags.clearFlag(PackageManager.FLAG_PERMISSION_AUTO_REVOKED)
+                permFlags = permFlags.clearFlag(FLAG_PERMISSION_AUTO_REVOKED)
                 if (groupPerm!!.flags != permFlags) {
                     app.packageManager.updatePermissionFlags(groupPerm!!.name,
                         group.packageInfo.packageName, PERMISSION_CONTROLLER_CHANGED_FLAG_MASK,
@@ -695,8 +758,12 @@ object KotlinUtils {
      *
      * @param app The current application
      * @param perm The permission which should be granted.
-     * @param group An optional app permission group in which to look for background or foreground
+     * @param group An app permission group in which to look for background or foreground
+     * @param isOneTime Whether this is a one-time permission grant
      * permissions
+     * @param userFixed Whether to mark the permissions as user fixed when granted
+     * @param withoutAppOps If these permission have app ops associated, and this value is true,
+     * then do not grant the app op when the permission is granted, and add the REVOKED_COMPAT flag.
      *
      * @return a LightPermission and boolean pair <permission with updated state (or the original
      * state, if it wasn't changed), should kill app>
@@ -704,8 +771,10 @@ object KotlinUtils {
     private fun grantRuntimePermission(
         app: Application,
         perm: LightPermission,
+        group: LightAppPermGroup,
         isOneTime: Boolean,
-        group: LightAppPermGroup
+        userFixed: Boolean = false,
+        withoutAppOps: Boolean = false
     ): Pair<LightPermission, Boolean> {
         val pkgInfo = group.packageInfo
         val user = UserHandle.getUserHandleForUid(pkgInfo.uid)
@@ -737,31 +806,39 @@ object KotlinUtils {
                 shouldKill = true
                 isGranted = true
             }
-            newFlags = newFlags.clearFlag(PackageManager.FLAG_PERMISSION_REVOKED_COMPAT)
+            newFlags = if (withoutAppOps) {
+                newFlags.setFlag(PackageManager.FLAG_PERMISSION_REVOKED_COMPAT)
+            } else {
+                newFlags.clearFlag(PackageManager.FLAG_PERMISSION_REVOKED_COMPAT)
+            }
             newFlags = newFlags.clearFlag(PackageManager.FLAG_PERMISSION_REVOKE_WHEN_REQUESTED)
 
             // If this permission affects an app op, ensure the permission app op is enabled
             // before the permission grant.
-            if (affectsAppOp) {
+            if (affectsAppOp && !withoutAppOps) {
                 allowAppOp(app, perm, group)
             }
         }
 
         // Granting a permission explicitly means the user already
         // reviewed it so clear the review flag on every grant.
-        newFlags = newFlags.clearFlag(PackageManager.FLAG_PERMISSION_REVIEW_REQUIRED)
+        newFlags = newFlags.clearFlag(FLAG_PERMISSION_REVIEW_REQUIRED)
 
         // Update the permission flags
-        // Now the apps can ask for the permission as the user
-        // no longer has it fixed in a denied state.
-        newFlags = newFlags.clearFlag(PackageManager.FLAG_PERMISSION_USER_FIXED)
-        newFlags = newFlags.setFlag(PackageManager.FLAG_PERMISSION_USER_SET)
-        newFlags = newFlags.clearFlag(PackageManager.FLAG_PERMISSION_AUTO_REVOKED)
+        if (!withoutAppOps && !userFixed) {
+            // Now the apps can ask for the permission as the user
+            // no longer has it fixed in a denied state.
+            newFlags = newFlags.clearFlag(FLAG_PERMISSION_USER_FIXED)
+            newFlags = newFlags.setFlag(FLAG_PERMISSION_USER_SET)
+        } else if (userFixed) {
+            newFlags = newFlags.setFlag(FLAG_PERMISSION_USER_FIXED)
+        }
+        newFlags = newFlags.clearFlag(FLAG_PERMISSION_AUTO_REVOKED)
 
         newFlags = if (isOneTime) {
-            newFlags.setFlag(PackageManager.FLAG_PERMISSION_ONE_TIME)
+            newFlags.setFlag(FLAG_PERMISSION_ONE_TIME)
         } else {
-            newFlags.clearFlag(PackageManager.FLAG_PERMISSION_ONE_TIME)
+            newFlags.clearFlag(FLAG_PERMISSION_ONE_TIME)
         }
 
         // If we newly grant background access to the fine location, double-guess the user some
@@ -1310,66 +1387,9 @@ object KotlinUtils {
             !context.getString(android.R.string.safety_protection_display_text).isNullOrEmpty()
     }
 
-    // TODO(b/248124555): Make these filter only dangerous permissions.
     fun addHealthPermissions(context: Context) {
-        val permissions = getDefinedHealthPerms(context.packageManager)
+        val permissions = HealthConnectManager.getHealthPermissions(context)
         PermissionMapping.addHealthPermissionsToPlatform(permissions)
-    }
-
-    private fun getDefinedHealthPerms(packageManager: PackageManager): Set<String> {
-        val permissionInfos = getHealthPermissionControllerPermissionInfos(packageManager)
-        if (permissionInfos.isEmpty()) {
-            return emptySet()
-        }
-
-        val definedHealthPerms: MutableSet<String> = hashSetOf()
-        for (permInfo in permissionInfos) {
-            if (HEALTH_PERMISSION_GROUP.equals(permInfo.group)) {
-                definedHealthPerms.add(permInfo.name)
-            }
-        }
-        return definedHealthPerms
-    }
-
-    /**
-     * Gets permission infos for all permissions defined by the health connect mainline module and
-     * part of the health connect modules' permission group.
-     */
-    private fun getHealthPermissionControllerPermissionInfos(packageManager: PackageManager):
-            List<PermissionInfo> {
-        val standardHealthPermissionInfo =
-                getPermissionInfoForStandardHealthPermission(packageManager)
-        if (standardHealthPermissionInfo?.packageName == null) {
-            return emptyList()
-        }
-
-        val standardHealthPermissionPackage = standardHealthPermissionInfo?.packageName!!
-        val healthPackageInfo: PackageInfo
-        try {
-            healthPackageInfo = packageManager.getPackageInfo(standardHealthPermissionPackage,
-                    PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
-        } catch (e: PackageManager.NameNotFoundException) {
-            Log.e(LOG_TAG, "HealthConnect permissions APK ($standardHealthPermissionPackage)" +
-                    " not found")
-            return emptyList()
-        }
-
-        if (healthPackageInfo.permissions == null) {
-            Log.e(LOG_TAG, "No HealthConnect permissions defined in APK " +
-                    "($standardHealthPermissionPackage)")
-            return emptyList()
-        }
-        return healthPackageInfo.permissions.toList()
-    }
-
-    private fun getPermissionInfoForStandardHealthPermission(packageManager: PackageManager):
-            PermissionInfo? {
-        return try {
-            packageManager.getPermissionInfo(MANAGE_HEALTH_PERMISSIONS, 0)
-        } catch (e: PackageManager.NameNotFoundException) {
-            Log.e(LOG_TAG, "HealthConnect permission $MANAGE_HEALTH_PERMISSIONS) not found")
-            null
-        }
     }
 }
 

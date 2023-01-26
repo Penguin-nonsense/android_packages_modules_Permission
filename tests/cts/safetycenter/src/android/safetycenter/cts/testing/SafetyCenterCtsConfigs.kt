@@ -26,6 +26,7 @@ import android.safetycenter.config.SafetySource.SAFETY_SOURCE_TYPE_ISSUE_ONLY
 import android.safetycenter.config.SafetySource.SAFETY_SOURCE_TYPE_STATIC
 import android.safetycenter.config.SafetySourcesGroup
 import android.safetycenter.cts.testing.SettingsPackage.getSettingsPackageName
+import com.android.modules.utils.build.SdkLevel
 
 /**
  * A class that provides [SafetyCenterConfig] objects and associated constants to facilitate setting
@@ -126,7 +127,7 @@ object SafetyCenterCtsConfigs {
     /**
      * ID of a [SafetySourcesGroup] provided by [SUMMARY_TEST_GROUP_CONFIG], containing sources:
      * [SOURCE_ID_1], [SOURCE_ID_2], [SOURCE_ID_3], [SOURCE_ID_4], [SOURCE_ID_5], [SOURCE_ID_6],
-     * [SOURCE_ID_7], [STATIC_IN_COLLAPSIBLE_ID].
+     * [SOURCE_ID_7], [STATIC_IN_STATEFUL_ID].
      */
     const val SUMMARY_TEST_GROUP_ID = "summary_test_group_id"
 
@@ -153,15 +154,16 @@ object SafetyCenterCtsConfigs {
 
     /**
      * ID of a [SafetySourcesGroup] provided by [COMPLEX_CONFIG], containing sources:
-     * [DYNAMIC_IN_COLLAPSIBLE_ID], [STATIC_IN_COLLAPSIBLE_ID].
+     * [DYNAMIC_IN_STATEFUL_ID], [STATIC_IN_STATEFUL_ID].
      */
-    const val MIXED_COLLAPSIBLE_GROUP_ID = "mixed_collapsible"
+    const val MIXED_STATEFUL_GROUP_ID = "mixed_stateful"
 
     /**
      * ID of a [SafetySourcesGroup] provided by [COMPLEX_CONFIG] and [COMPLEX_ALL_PROFILE_CONFIG],
-     * containing sources: [DYNAMIC_IN_RIGID_ID], [STATIC_IN_RIGID_ID], [ISSUE_ONLY_IN_RIGID_ID].
+     * containing sources: [DYNAMIC_IN_STATELESS_ID], [STATIC_IN_STATELESS_ID],
+     * [ISSUE_ONLY_IN_STATELESS_ID].
      */
-    const val MIXED_RIGID_GROUP_ID = "mixed_rigid"
+    const val MIXED_STATELESS_GROUP_ID = "mixed_stateless"
 
     /**
      * ID of a source provided by [COMPLEX_CONFIG], [COMPLEX_ALL_PROFILE_CONFIG], and
@@ -233,31 +235,31 @@ object SafetyCenterCtsConfigs {
      * ID of a source provided by [COMPLEX_CONFIG], this is a generic, dynamic, primary profile
      * only, visible source.
      */
-    const val DYNAMIC_IN_COLLAPSIBLE_ID = "dynamic_in_collapsible"
+    const val DYNAMIC_IN_STATEFUL_ID = "dynamic_in_stateful"
 
     /**
      * ID of a source provided by [COMPLEX_CONFIG] and [COMPLEX_ALL_PROFILE_CONFIG], this is a
      * generic, dynamic, visible source.
      */
-    const val DYNAMIC_IN_RIGID_ID = "dynamic_in_rigid"
+    const val DYNAMIC_IN_STATELESS_ID = "dynamic_in_stateless"
 
     /**
      * ID of a source provided by [COMPLEX_CONFIG] and [COMPLEX_ALL_PROFILE_CONFIG], this is an
      * issue-only source.
      */
-    const val ISSUE_ONLY_IN_RIGID_ID = "issue_only_in_rigid"
+    const val ISSUE_ONLY_IN_STATELESS_ID = "issue_only_in_stateless"
 
     /**
      * ID of a source provided by [COMPLEX_CONFIG] and [SUMMARY_TEST_CONFIG], this is a generic,
      * static, primary profile only source.
      */
-    const val STATIC_IN_COLLAPSIBLE_ID = "static_in_collapsible"
+    const val STATIC_IN_STATEFUL_ID = "static_in_stateful"
 
     /**
      * ID of a source provided by [COMPLEX_CONFIG] and [COMPLEX_ALL_PROFILE_CONFIG], this is a
      * generic, static source.
      */
-    const val STATIC_IN_RIGID_ID = "static_in_rigid"
+    const val STATIC_IN_STATELESS_ID = "static_in_stateless"
 
     /** Package name for the [DYNAMIC_OTHER_PACKAGE_ID] source. */
     const val OTHER_PACKAGE_NAME = "other_package_name"
@@ -270,6 +272,20 @@ object SafetyCenterCtsConfigs {
     val ISSUE_ONLY_SOURCE_ALL_PROFILE_CONFIG =
         singleSourceConfig(
             issueOnlyAllProfileSafetySourceBuilder(ISSUE_ONLY_ALL_PROFILE_SOURCE_ID).build())
+
+    /**
+     * A Simple [SafetyCenterConfig] with an issue only source inside a [SafetySourcesGroup] with
+     * null title.
+     */
+    val ISSUE_ONLY_SOURCE_NO_GROUP_TITLE_CONFIG =
+        SafetyCenterConfig.Builder()
+            .addSafetySourcesGroup(
+                safetySourcesGroupBuilder(SINGLE_SOURCE_GROUP_ID)
+                    .setTitleResId(Resources.ID_NULL)
+                    .addSafetySource(
+                        issueOnlySafetySourceBuilder(ISSUE_ONLY_ALL_OPTIONAL_ID).build())
+                    .build())
+            .build()
 
     /** A dynamic source with [OTHER_PACKAGE_NAME] */
     val DYNAMIC_OTHER_PACKAGE_SAFETY_SOURCE =
@@ -296,8 +312,12 @@ object SafetyCenterCtsConfigs {
                     .build())
             .addSafetySourcesGroup(
                 safetySourcesGroupBuilder(MULTIPLE_SOURCES_GROUP_ID_2)
+                    .setTitleResId(android.R.string.copy)
+                    .setSummaryResId(android.R.string.cancel)
                     .addSafetySource(
                         dynamicSafetySourceBuilder(SOURCE_ID_3)
+                            .setTitleResId(android.R.string.copy)
+                            .setSummaryResId(android.R.string.cancel)
                             .setRefreshOnPageOpenAllowed(false)
                             .build())
                     .build())
@@ -448,7 +468,7 @@ object SafetyCenterCtsConfigs {
         SafetyCenterConfig.Builder()
             .addSafetySourcesGroup(
                 safetySourcesGroupBuilder(ANDROID_LOCK_SCREEN_SOURCES_GROUP_ID)
-                    // This is needed to have a collapsible group with an empty summary
+                    // This is needed to have a stateful group with an empty summary
                     .setSummaryResId(Resources.ID_NULL)
                     .setStatelessIconType(SafetySourcesGroup.STATELESS_ICON_TYPE_PRIVACY)
                     .addSafetySource(
@@ -482,7 +502,7 @@ object SafetyCenterCtsConfigs {
                     .addSafetySource(dynamicSafetySource(SOURCE_ID_5))
                     .addSafetySource(dynamicSafetySource(SOURCE_ID_6))
                     .addSafetySource(dynamicSafetySource(SOURCE_ID_7))
-                    .addSafetySource(staticSafetySource(STATIC_IN_COLLAPSIBLE_ID))
+                    .addSafetySource(staticSafetySource(STATIC_IN_STATEFUL_ID))
                     .build())
             .build()
 
@@ -504,6 +524,12 @@ object SafetyCenterCtsConfigs {
                             .setMaxSeverityLevel(SafetySourceData.SEVERITY_LEVEL_RECOMMENDATION)
                             .setSearchTermsResId(android.R.string.ok)
                             .setLoggingAllowed(false)
+                            .apply {
+                                if (SdkLevel.isAtLeastU()) {
+                                    setNotificationsAllowed(true)
+                                    setDeduplicationGroup("group")
+                                }
+                            }
                             .build())
                     .addSafetySource(
                         dynamicSafetySourceBuilder(DYNAMIC_DISABLED_ID)
@@ -528,7 +554,14 @@ object SafetyCenterCtsConfigs {
                     .build())
             .addSafetySourcesGroup(
                 safetySourcesGroupBuilder(STATIC_GROUP_ID)
-                    .setSummaryResId(Resources.ID_NULL)
+                    .apply {
+                        if (SdkLevel.isAtLeastU()) {
+                            setType(SafetySourcesGroup.SAFETY_SOURCES_GROUP_TYPE_STATELESS)
+                            setStatelessIconType(SafetySourcesGroup.STATELESS_ICON_TYPE_PRIVACY)
+                        } else {
+                            setSummaryResId(Resources.ID_NULL)
+                        }
+                    }
                     .addSafetySource(
                         staticSafetySourceBuilder(STATIC_BAREBONE_ID)
                             .setSummaryResId(Resources.ID_NULL)
@@ -536,11 +569,20 @@ object SafetyCenterCtsConfigs {
                     .addSafetySource(
                         staticSafetySourceBuilder(STATIC_ALL_OPTIONAL_ID)
                             .setSearchTermsResId(android.R.string.ok)
+                            .apply { if (SdkLevel.isAtLeastU()) setPackageName(CTS_PACKAGE_NAME) }
                             .build())
                     .build())
             .addSafetySourcesGroup(
                 SafetySourcesGroup.Builder()
                     .setId(ISSUE_ONLY_GROUP_ID)
+                    .apply {
+                        if (SdkLevel.isAtLeastU()) {
+                            setType(SafetySourcesGroup.SAFETY_SOURCES_GROUP_TYPE_HIDDEN)
+                            setTitleResId(android.R.string.ok)
+                            setSummaryResId(android.R.string.ok)
+                            setStatelessIconType(SafetySourcesGroup.STATELESS_ICON_TYPE_PRIVACY)
+                        }
+                    }
                     .addSafetySource(
                         issueOnlySafetySourceBuilder(ISSUE_ONLY_BAREBONE_ID)
                             .setRefreshOnPageOpenAllowed(false)
@@ -549,19 +591,25 @@ object SafetyCenterCtsConfigs {
                         issueOnlySafetySourceBuilder(ISSUE_ONLY_ALL_OPTIONAL_ID)
                             .setMaxSeverityLevel(SafetySourceData.SEVERITY_LEVEL_RECOMMENDATION)
                             .setLoggingAllowed(false)
+                            .apply {
+                                if (SdkLevel.isAtLeastU()) {
+                                    setNotificationsAllowed(true)
+                                    setDeduplicationGroup("group")
+                                }
+                            }
                             .build())
                     .build())
             .addSafetySourcesGroup(
-                safetySourcesGroupBuilder(MIXED_COLLAPSIBLE_GROUP_ID)
-                    .addSafetySource(dynamicSafetySource(DYNAMIC_IN_COLLAPSIBLE_ID))
-                    .addSafetySource(staticSafetySource(STATIC_IN_COLLAPSIBLE_ID))
+                safetySourcesGroupBuilder(MIXED_STATEFUL_GROUP_ID)
+                    .addSafetySource(dynamicSafetySource(DYNAMIC_IN_STATEFUL_ID))
+                    .addSafetySource(staticSafetySource(STATIC_IN_STATEFUL_ID))
                     .build())
             .addSafetySourcesGroup(
-                safetySourcesGroupBuilder(MIXED_RIGID_GROUP_ID)
+                safetySourcesGroupBuilder(MIXED_STATELESS_GROUP_ID)
                     .setSummaryResId(Resources.ID_NULL)
-                    .addSafetySource(dynamicSafetySource(DYNAMIC_IN_RIGID_ID))
-                    .addSafetySource(staticSafetySource(STATIC_IN_RIGID_ID))
-                    .addSafetySource(issueOnlySafetySource(ISSUE_ONLY_IN_RIGID_ID))
+                    .addSafetySource(dynamicSafetySource(DYNAMIC_IN_STATELESS_ID))
+                    .addSafetySource(staticSafetySource(STATIC_IN_STATELESS_ID))
+                    .addSafetySource(issueOnlySafetySource(ISSUE_ONLY_IN_STATELESS_ID))
                     .build())
             .build()
 
@@ -601,6 +649,7 @@ object SafetyCenterCtsConfigs {
                     .addSafetySource(
                         staticAllProfileSafetySourceBuilder(STATIC_ALL_OPTIONAL_ID)
                             .setSearchTermsResId(android.R.string.ok)
+                            .apply { if (SdkLevel.isAtLeastU()) setPackageName(CTS_PACKAGE_NAME) }
                             .build())
                     .build())
             .addSafetySourcesGroup(
@@ -614,17 +663,23 @@ object SafetyCenterCtsConfigs {
                         issueOnlyAllProfileSafetySourceBuilder(ISSUE_ONLY_ALL_OPTIONAL_ID)
                             .setMaxSeverityLevel(SafetySourceData.SEVERITY_LEVEL_RECOMMENDATION)
                             .setLoggingAllowed(false)
+                            .apply {
+                                if (SdkLevel.isAtLeastU()) {
+                                    setNotificationsAllowed(true)
+                                    setDeduplicationGroup("group")
+                                }
+                            }
                             .build())
                     .build())
             .addSafetySourcesGroup(
-                safetySourcesGroupBuilder(MIXED_RIGID_GROUP_ID)
+                safetySourcesGroupBuilder(MIXED_STATELESS_GROUP_ID)
                     .setSummaryResId(Resources.ID_NULL)
                     .addSafetySource(
-                        dynamicAllProfileSafetySourceBuilder(DYNAMIC_IN_RIGID_ID).build())
+                        dynamicAllProfileSafetySourceBuilder(DYNAMIC_IN_STATELESS_ID).build())
                     .addSafetySource(
-                        staticAllProfileSafetySourceBuilder(STATIC_IN_RIGID_ID).build())
+                        staticAllProfileSafetySourceBuilder(STATIC_IN_STATELESS_ID).build())
                     .addSafetySource(
-                        issueOnlyAllProfileSafetySourceBuilder(ISSUE_ONLY_IN_RIGID_ID).build())
+                        issueOnlyAllProfileSafetySourceBuilder(ISSUE_ONLY_IN_STATELESS_ID).build())
                     .build())
             .build()
 
