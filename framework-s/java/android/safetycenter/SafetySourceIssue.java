@@ -630,11 +630,18 @@ public final class SafetySourceIssue implements Parcelable {
                         String id = in.readString();
                         CharSequence label = TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in);
                         PendingIntent pendingIntent = in.readTypedObject(PendingIntent.CREATOR);
-                        return new Builder(id, label, pendingIntent)
-                                .setWillResolve(in.readBoolean())
-                                .setSuccessMessage(
-                                        TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in))
-                                .build();
+                        Builder builder =
+                                new Builder(id, label, pendingIntent)
+                                        .setWillResolve(in.readBoolean())
+                                        .setSuccessMessage(
+                                                TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(
+                                                        in));
+                        if (SdkLevel.isAtLeastU()) {
+                            ConfirmationDialogDetails confirmationDialogDetails =
+                                    in.readTypedObject(ConfirmationDialogDetails.CREATOR);
+                            builder.setConfirmationDialogDetails(confirmationDialogDetails);
+                        }
+                        return builder.build();
                     }
 
                     @Override
@@ -660,18 +667,21 @@ public final class SafetySourceIssue implements Parcelable {
         @NonNull private final PendingIntent mPendingIntent;
         private final boolean mWillResolve;
         @Nullable private final CharSequence mSuccessMessage;
+        @Nullable private final ConfirmationDialogDetails mConfirmationDialogDetails;
 
         private Action(
                 @NonNull String id,
                 @NonNull CharSequence label,
                 @NonNull PendingIntent pendingIntent,
                 boolean willResolve,
-                @Nullable CharSequence successMessage) {
+                @Nullable CharSequence successMessage,
+                @Nullable ConfirmationDialogDetails confirmationDialogDetails) {
             mId = id;
             mLabel = label;
             mPendingIntent = pendingIntent;
             mWillResolve = willResolve;
             mSuccessMessage = successMessage;
+            mConfirmationDialogDetails = confirmationDialogDetails;
         }
 
         /**
@@ -721,6 +731,19 @@ public final class SafetySourceIssue implements Parcelable {
             return mSuccessMessage;
         }
 
+        /**
+         * Returns the optional data to be displayed in the confirmation dialog prior to launching
+         * the {@link PendingIntent} when the action is clicked on.
+         */
+        @Nullable
+        @RequiresApi(UPSIDE_DOWN_CAKE)
+        public ConfirmationDialogDetails getConfirmationDialogDetails() {
+            if (!SdkLevel.isAtLeastU()) {
+                throw new UnsupportedOperationException();
+            }
+            return mConfirmationDialogDetails;
+        }
+
         @Override
         public int describeContents() {
             return 0;
@@ -733,6 +756,9 @@ public final class SafetySourceIssue implements Parcelable {
             dest.writeTypedObject(mPendingIntent, flags);
             dest.writeBoolean(mWillResolve);
             TextUtils.writeToParcel(mSuccessMessage, dest, flags);
+            if (SdkLevel.isAtLeastU()) {
+                dest.writeTypedObject(mConfirmationDialogDetails, flags);
+            }
         }
 
         @Override
@@ -744,12 +770,19 @@ public final class SafetySourceIssue implements Parcelable {
                     && TextUtils.equals(mLabel, that.mLabel)
                     && mPendingIntent.equals(that.mPendingIntent)
                     && mWillResolve == that.mWillResolve
-                    && TextUtils.equals(mSuccessMessage, that.mSuccessMessage);
+                    && TextUtils.equals(mSuccessMessage, that.mSuccessMessage)
+                    && Objects.equals(mConfirmationDialogDetails, that.mConfirmationDialogDetails);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(mId, mLabel, mPendingIntent, mWillResolve, mSuccessMessage);
+            return Objects.hash(
+                    mId,
+                    mLabel,
+                    mPendingIntent,
+                    mWillResolve,
+                    mSuccessMessage,
+                    mConfirmationDialogDetails);
         }
 
         @Override
@@ -765,7 +798,120 @@ public final class SafetySourceIssue implements Parcelable {
                     + mWillResolve
                     + ", mSuccessMessage="
                     + mSuccessMessage
+                    + ", mConfirmationDialogDetails="
+                    + mConfirmationDialogDetails
                     + '}';
+        }
+
+        /** Data for an action confirmation dialog to be shown before action is executed. */
+        @RequiresApi(UPSIDE_DOWN_CAKE)
+        public static final class ConfirmationDialogDetails implements Parcelable {
+
+            @NonNull
+            public static final Creator<ConfirmationDialogDetails> CREATOR =
+                    new Creator<ConfirmationDialogDetails>() {
+                        @Override
+                        public ConfirmationDialogDetails createFromParcel(Parcel in) {
+                            CharSequence title =
+                                    TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in);
+                            CharSequence text =
+                                    TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in);
+                            CharSequence acceptButtonText =
+                                    TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in);
+                            CharSequence denyButtonText =
+                                    TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in);
+                            return new ConfirmationDialogDetails(
+                                    title, text, acceptButtonText, denyButtonText);
+                        }
+
+                        @Override
+                        public ConfirmationDialogDetails[] newArray(int size) {
+                            return new ConfirmationDialogDetails[size];
+                        }
+                    };
+
+            @NonNull private final CharSequence mTitle;
+            @NonNull private final CharSequence mText;
+            @NonNull private final CharSequence mAcceptButtonText;
+            @NonNull private final CharSequence mDenyButtonText;
+
+            public ConfirmationDialogDetails(
+                    @NonNull CharSequence title,
+                    @NonNull CharSequence text,
+                    @NonNull CharSequence acceptButtonText,
+                    @NonNull CharSequence denyButtonText) {
+                mTitle = requireNonNull(title);
+                mText = requireNonNull(text);
+                mAcceptButtonText = requireNonNull(acceptButtonText);
+                mDenyButtonText = requireNonNull(denyButtonText);
+            }
+
+            /** Returns the title of action confirmation dialog. */
+            @NonNull
+            public CharSequence getTitle() {
+                return mTitle;
+            }
+
+            /** Returns the text of action confirmation dialog. */
+            @NonNull
+            public CharSequence getText() {
+                return mText;
+            }
+
+            /** Returns the text of the button to accept action execution. */
+            @NonNull
+            public CharSequence getAcceptButtonText() {
+                return mAcceptButtonText;
+            }
+
+            /** Returns the text of the button to deny action execution. */
+            @NonNull
+            public CharSequence getDenyButtonText() {
+                return mDenyButtonText;
+            }
+
+            @Override
+            public int describeContents() {
+                return 0;
+            }
+
+            @Override
+            public void writeToParcel(@NonNull Parcel dest, int flags) {
+                TextUtils.writeToParcel(mTitle, dest, flags);
+                TextUtils.writeToParcel(mText, dest, flags);
+                TextUtils.writeToParcel(mAcceptButtonText, dest, flags);
+                TextUtils.writeToParcel(mDenyButtonText, dest, flags);
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof ConfirmationDialogDetails)) return false;
+                ConfirmationDialogDetails that = (ConfirmationDialogDetails) o;
+                return TextUtils.equals(mTitle, that.mTitle)
+                        && TextUtils.equals(mText, that.mText)
+                        && TextUtils.equals(mAcceptButtonText, that.mAcceptButtonText)
+                        && TextUtils.equals(mDenyButtonText, that.mDenyButtonText);
+            }
+
+            @Override
+            public int hashCode() {
+                return Objects.hash(mTitle, mText, mAcceptButtonText, mDenyButtonText);
+            }
+
+            @Override
+            public String toString() {
+                return "ConfirmationDialogDetails{"
+                        + "mTitle="
+                        + mTitle
+                        + ", mText="
+                        + mText
+                        + ", mAcceptButtonText="
+                        + mAcceptButtonText
+                        + ", mDenyButtonText="
+                        + mDenyButtonText
+                        + '}';
+            }
         }
 
         /** Builder class for {@link Action}. */
@@ -776,6 +922,7 @@ public final class SafetySourceIssue implements Parcelable {
             @NonNull private final PendingIntent mPendingIntent;
             private boolean mWillResolve = false;
             @Nullable private CharSequence mSuccessMessage;
+            @Nullable private ConfirmationDialogDetails mConfirmationDialogDetails;
 
             /** Creates a {@link Builder} for an {@link Action}. */
             public Builder(
@@ -787,8 +934,27 @@ public final class SafetySourceIssue implements Parcelable {
                 mPendingIntent = requireNonNull(pendingIntent);
             }
 
+            /** Creates a {@link Builder} with the values from the given {@link Action}. */
+            @RequiresApi(UPSIDE_DOWN_CAKE)
+            public Builder(@NonNull Action action) {
+                if (!SdkLevel.isAtLeastU()) {
+                    throw new UnsupportedOperationException();
+                }
+                requireNonNull(action);
+                mId = action.mId;
+                mLabel = action.mLabel;
+                mPendingIntent = action.mPendingIntent;
+                mWillResolve = action.mWillResolve;
+                mSuccessMessage = action.mSuccessMessage;
+                mConfirmationDialogDetails = action.mConfirmationDialogDetails;
+            }
+
             /**
              * Sets whether the action will resolve the safety issue. Defaults to {@code false}.
+             *
+             * <p>Note: It is not allowed for resolvable actions to have a {@link PendingIntent}
+             * that launches activity. When extra confirmation is needed consider using {@link
+             * Builder#setConfirmationDialogDetails}.
              *
              * @see #willResolve()
              */
@@ -809,10 +975,41 @@ public final class SafetySourceIssue implements Parcelable {
                 return this;
             }
 
+            /**
+             * Sets the optional data to be displayed in the confirmation dialog prior to launching
+             * the {@link PendingIntent} when the action is clicked on.
+             */
+            @NonNull
+            @RequiresApi(UPSIDE_DOWN_CAKE)
+            public Builder setConfirmationDialogDetails(
+                    @Nullable ConfirmationDialogDetails confirmationDialogDetails) {
+                if (!SdkLevel.isAtLeastU()) {
+                    throw new UnsupportedOperationException();
+                }
+                mConfirmationDialogDetails = confirmationDialogDetails;
+                return this;
+            }
+
             /** Creates the {@link Action} defined by this {@link Builder}. */
             @NonNull
             public Action build() {
-                return new Action(mId, mLabel, mPendingIntent, mWillResolve, mSuccessMessage);
+                if (SdkLevel.isAtLeastU()) {
+                    boolean willResolveWithActivity = mWillResolve && mPendingIntent.isActivity();
+                    checkArgument(
+                            !willResolveWithActivity,
+                            "Launching activity from Action that should resolve the"
+                                    + " SafetySourceIssue is not allowed. Consider using setting a"
+                                    + " Confirmation if needed, and either set the willResolve to"
+                                    + " false or make PendingIntent to start a service/send a"
+                                    + " broadcast.");
+                }
+                return new Action(
+                        mId,
+                        mLabel,
+                        mPendingIntent,
+                        mWillResolve,
+                        mSuccessMessage,
+                        mConfirmationDialogDetails);
             }
         }
     }
@@ -840,7 +1037,7 @@ public final class SafetySourceIssue implements Parcelable {
                         return new Builder(
                                         TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in),
                                         TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(in))
-                                .setActions(in.createTypedArrayList(Action.CREATOR))
+                                .addActions(in.createTypedArrayList(Action.CREATOR))
                                 .build();
                     }
 
@@ -945,28 +1142,29 @@ public final class SafetySourceIssue implements Parcelable {
                 mText = requireNonNull(text);
             }
 
-            /** Adds an {@link Action} to be show on the custom {@link Notification}. */
+            /** Creates a {@link Builder} with the values from the given {@link Notification}. */
+            public Builder(@NonNull Notification notification) {
+                requireNonNull(notification);
+                mTitle = notification.mTitle;
+                mText = notification.mText;
+                mActions.addAll(notification.mActions);
+            }
+
+            /** Adds an {@link Action} to the custom {@link Notification}. */
             @NonNull
             public Builder addAction(@NonNull Action action) {
                 mActions.add(requireNonNull(action));
                 return this;
             }
 
-            /**
-             * Sets the list of {@link Action}s to be show on the custom {@link Notification},
-             * removing any which were previously added.
-             */
+            /** Adds several {@link Action}s to the custom {@link Notification}. */
             @NonNull
-            public Builder setActions(@NonNull List<Action> actions) {
-                mActions.clear();
+            public Builder addActions(@NonNull List<Action> actions) {
                 mActions.addAll(requireNonNull(actions));
                 return this;
             }
 
-            /**
-             * Clears all the {@link Action}s that were added to this custom {@link
-             * Notification.Builder}.
-             */
+            /** Clears all the {@link Action}s that were added so far. */
             @NonNull
             public Builder clearActions() {
                 mActions.clear();
@@ -1025,6 +1223,29 @@ public final class SafetySourceIssue implements Parcelable {
             this.mSummary = requireNonNull(summary);
             this.mSeverityLevel = validateSeverityLevel(severityLevel);
             this.mIssueTypeId = requireNonNull(issueTypeId);
+        }
+
+        /** Creates a {@link Builder} with the values from the given {@link SafetySourceIssue}. */
+        @RequiresApi(UPSIDE_DOWN_CAKE)
+        public Builder(@NonNull SafetySourceIssue safetySourceIssue) {
+            if (!SdkLevel.isAtLeastU()) {
+                throw new UnsupportedOperationException();
+            }
+            requireNonNull(safetySourceIssue);
+            mId = safetySourceIssue.mId;
+            mTitle = safetySourceIssue.mTitle;
+            mSummary = safetySourceIssue.mSummary;
+            mSeverityLevel = safetySourceIssue.mSeverityLevel;
+            mIssueTypeId = safetySourceIssue.mIssueTypeId;
+            mActions.addAll(safetySourceIssue.mActions);
+            mSubtitle = safetySourceIssue.mSubtitle;
+            mIssueCategory = safetySourceIssue.mIssueCategory;
+            mOnDismissPendingIntent = safetySourceIssue.mOnDismissPendingIntent;
+            mAttributionTitle = safetySourceIssue.mAttributionTitle;
+            mDeduplicationId = safetySourceIssue.mDeduplicationId;
+            mCustomNotification = safetySourceIssue.mCustomNotification;
+            mNotificationBehavior = safetySourceIssue.mNotificationBehavior;
+            mIssueActionability = safetySourceIssue.mIssueActionability;
         }
 
         /** Sets the localized subtitle. */

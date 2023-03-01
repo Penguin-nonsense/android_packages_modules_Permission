@@ -48,6 +48,7 @@ import android.content.pm.PackageManager.MATCH_DIRECT_BOOT_AWARE
 import android.content.pm.PackageManager.MATCH_DIRECT_BOOT_UNAWARE
 import android.content.pm.PermissionGroupInfo
 import android.content.pm.PermissionInfo
+import android.content.pm.ResolveInfo
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -59,6 +60,8 @@ import android.os.UserHandle
 import android.permission.PermissionManager
 import android.provider.DeviceConfig
 import android.provider.Settings
+import android.safetylabel.SafetyLabelConstants.PERMISSION_RATIONALE_ENABLED
+import android.safetylabel.SafetyLabelConstants.SAFETY_LABEL_CHANGE_NOTIFICATIONS_ENABLED
 import android.text.TextUtils
 import android.util.Log
 import androidx.annotation.ChecksSdkIntAtLeast
@@ -78,6 +81,7 @@ import com.android.permissioncontroller.permission.model.livedatatypes.LightPerm
 import com.android.permissioncontroller.permission.model.livedatatypes.PermState
 import com.android.permissioncontroller.permission.service.LocationAccessCheck
 import com.android.permissioncontroller.permission.ui.handheld.SettingsWithLargeHeader
+import java.time.Duration
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.CoroutineContext
@@ -136,9 +140,6 @@ object KotlinUtils {
     /** Whether to show 7-day toggle in privacy hub.  */
     private const val PRIVACY_DASHBOARD_7_DAY_TOGGLE = "privacy_dashboard_7_day_toggle"
 
-    /** Whether to show permission rationale in permission settings and grant dialog.  */
-    private const val PRIVACY_PERMISSION_RATIONALE_ENABLED = "privacy_permission_rationale_enabled"
-
     /** Whether to placeholder safety label data in permission settings and grant dialog.  */
     private const val PRIVACY_PLACEHOLDER_SAFETY_LABEL_DATA_ENABLED =
         "privacy_placeholder_safety_label_data_enabled"
@@ -148,6 +149,21 @@ object KotlinUtils {
 
     /** Whether to show the photo picker option in permission prompts.  */
     private const val PROPERTY_PHOTO_PICKER_PROMPT_ENABLED = "photo_picker_prompt_enabled"
+
+    /**
+     * The minimum amount of time to wait, after scheduling the safety label changes job, before
+     * the job actually runs for the first time.
+     */
+    private const val PROPERTY_SAFETY_LABEL_CHANGES_JOB_DELAY_MILLIS =
+        "safety_label_changes_job_delay_millis"
+
+    /** How often the safety label changes job service will run its job. */
+    private const val PROPERTY_SAFETY_LABEL_CHANGES_JOB_INTERVAL_MILLIS =
+        "safety_label_changes_job_interval_millis"
+
+    /** Whether the safety label changes job should only be run when the device is idle. */
+    private const val PROPERTY_SAFETY_LABEL_CHANGES_JOB_RUN_WHEN_IDLE =
+        "safety_label_changes_job_run_when_idle"
 
     /**
      * Whether the Permissions Hub 2 flag is enabled
@@ -260,7 +276,7 @@ object KotlinUtils {
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
     fun isPermissionRationaleEnabled(): Boolean {
         return SdkLevel.isAtLeastU() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
-            PRIVACY_PERMISSION_RATIONALE_ENABLED, false)
+            PERMISSION_RATIONALE_ENABLED, false)
     }
 
     /**
@@ -271,6 +287,49 @@ object KotlinUtils {
     fun isPlaceholderSafetyLabelDataEnabled(): Boolean {
         return DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
             PRIVACY_PLACEHOLDER_SAFETY_LABEL_DATA_ENABLED, false)
+    }
+
+    /**
+     * Whether we should enable the safety label change notifications and data sharing updates UI.
+     *
+     * This feature has its own [DeviceConfig] flag, however, we also ensure it is only enabled
+     * when its preceding feature, Permission Rationale, is enabled.
+     */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
+    fun isSafetyLabelChangeNotificationsEnabled(): Boolean {
+        return SdkLevel.isAtLeastU() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+                SAFETY_LABEL_CHANGE_NOTIFICATIONS_ENABLED, false) &&
+                isPermissionRationaleEnabled()
+    }
+
+    /**
+     * The minimum amount of time to wait, after scheduling the safety label changes job, before
+     * the job actually runs for the first time.
+     */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
+    fun getSafetyLabelChangesJobDelayMillis(): Long {
+        return DeviceConfig.getLong(
+            DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_SAFETY_LABEL_CHANGES_JOB_DELAY_MILLIS,
+            Duration.ofMinutes(30).toMillis())
+    }
+
+    /** How often the safety label changes job will run. */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
+    fun getSafetyLabelChangesJobIntervalMillis(): Long {
+        return DeviceConfig.getLong(
+            DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_SAFETY_LABEL_CHANGES_JOB_INTERVAL_MILLIS,
+            Duration.ofDays(30).toMillis())
+    }
+
+    /** Whether the safety label changes job should only be run when the device is idle. */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
+    fun runSafetyLabelChangesJobOnlyWhenDeviceIdle(): Boolean {
+        return DeviceConfig.getBoolean(
+            DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_SAFETY_LABEL_CHANGES_JOB_RUN_WHEN_IDLE,
+            true)
     }
 
     /**
@@ -1390,6 +1449,39 @@ object KotlinUtils {
     fun addHealthPermissions(context: Context) {
         val permissions = HealthConnectManager.getHealthPermissions(context)
         PermissionMapping.addHealthPermissionsToPlatform(permissions)
+    }
+
+    /**
+     * Returns an [Intent] to the installer app store for a given package name, or {@code null} if
+     * none found
+     */
+    fun getAppStoreIntent(
+        context: Context,
+        installerPackageName: String?,
+        packageName: String?
+    ): Intent? {
+        val intent: Intent = Intent(Intent.ACTION_SHOW_APP_INFO)
+            .setPackage(installerPackageName)
+        val result: Intent? = resolveActivityForIntent(context, intent)
+        if (result != null) {
+            result.putExtra(Intent.EXTRA_PACKAGE_NAME, packageName)
+            return result
+        }
+        return null
+    }
+
+    /**
+     * Verify that a component that supports the intent with action and return a new intent with
+     * same action and resolved class name set. Returns null if no activity resolution.
+     */
+    private fun resolveActivityForIntent(context: Context, intent: Intent): Intent? {
+        val result: ResolveInfo? = context.packageManager.resolveActivity(intent, 0)
+        return if (result != null) {
+            Intent(intent.action)
+                .setClassName(result.activityInfo.packageName, result.activityInfo.name)
+        } else {
+            null
+        }
     }
 }
 

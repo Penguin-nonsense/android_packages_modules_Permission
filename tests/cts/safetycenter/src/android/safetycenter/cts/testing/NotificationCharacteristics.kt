@@ -17,30 +17,55 @@
 package android.safetycenter.cts.testing
 
 import android.app.Notification
-import android.service.notification.StatusBarNotification
-import com.google.common.truth.Truth.assertThat
 
 /** The characteristic properties of a notification. */
-data class NotificationCharacteristics(val title: String, val text: String) {
+data class NotificationCharacteristics(
+    val title: String,
+    val text: String,
+    val actions: List<CharSequence> = emptyList(),
+    val importance: Int = IMPORTANCE_ANY,
+    val blockable: Boolean? = null
+) {
     companion object {
-        fun assertNotificationMatches(
-            statusBarNotification: StatusBarNotification,
-            expected: NotificationCharacteristics
-        ) {
-            statusBarNotification.notification?.apply {
-                assertThat(extras.getString(Notification.EXTRA_TITLE)).isEqualTo(expected.title)
-                assertThat(extras.getString(Notification.EXTRA_TEXT)).isEqualTo(expected.text)
-            }
+        const val IMPORTANCE_ANY = -1
+
+        private fun importanceMatches(
+            statusBarNotificationWithChannel: StatusBarNotificationWithChannel,
+            characteristicImportance: Int
+        ): Boolean {
+            return characteristicImportance == IMPORTANCE_ANY ||
+                statusBarNotificationWithChannel.channel.importance == characteristicImportance
         }
 
-        fun assertNotificationsMatch(
-            statusBarNotifications: List<StatusBarNotification>,
-            vararg expected: NotificationCharacteristics
-        ) {
-            assertThat(statusBarNotifications).hasSize(expected.size)
-            statusBarNotifications.zip(expected).forEach { (sbn, characteristics) ->
-                assertNotificationMatches(sbn, characteristics)
+        private fun blockableMatches(
+            statusBarNotificationWithChannel: StatusBarNotificationWithChannel,
+            characteristicBlockable: Boolean?
+        ): Boolean {
+            return characteristicBlockable == null ||
+                statusBarNotificationWithChannel.channel.isBlockable == characteristicBlockable
+        }
+
+        private fun isMatch(
+            statusBarNotificationWithChannel: StatusBarNotificationWithChannel,
+            characteristic: NotificationCharacteristics
+        ): Boolean {
+            val notif = statusBarNotificationWithChannel.statusBarNotification.notification
+            return notif != null &&
+                notif.extras.getString(Notification.EXTRA_TITLE) == characteristic.title &&
+                notif.extras.getString(Notification.EXTRA_TEXT) == characteristic.text &&
+                notif.actions.orEmpty().map { it.title } == characteristic.actions &&
+                importanceMatches(statusBarNotificationWithChannel, characteristic.importance) &&
+                blockableMatches(statusBarNotificationWithChannel, characteristic.blockable)
+        }
+
+        fun areMatching(
+            statusBarNotifications: List<StatusBarNotificationWithChannel>,
+            characteristics: List<NotificationCharacteristics>
+        ): Boolean {
+            if (statusBarNotifications.size != characteristics.size) {
+                return false
             }
+            return statusBarNotifications.zip(characteristics).all { isMatch(it.first, it.second) }
         }
     }
 }

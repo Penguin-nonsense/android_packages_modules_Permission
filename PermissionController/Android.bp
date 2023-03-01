@@ -131,6 +131,7 @@ android_app {
         "SettingsLibFooterPreference",
         "SettingsLibSelectorWithWidgetPreference",
         "SettingsLibTwoTargetPreference",
+        "SettingsLibIllustrationPreference",
         "androidx.annotation_annotation",
         "permissioncontroller-statsd",
         "car-ui-lib",
@@ -140,7 +141,8 @@ android_app {
         "modules-utils-build_system",
         "safety-center-resources-lib",
         "lottie",
-        "safety-label"
+        "safety-label",
+        "role-controller",
     ],
 
     proto: {

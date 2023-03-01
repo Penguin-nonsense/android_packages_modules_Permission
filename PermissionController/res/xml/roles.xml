@@ -138,6 +138,8 @@
                 minSdkVersion="33"/>
             <permission name="android.permission.SUBSCRIBE_TO_KEYGUARD_LOCKED_STATE"
                 minSdkVersion="33" />
+            <permission name="android.permission.EXECUTE_APP_ACTION"
+                minSdkVersion="34" />
         </permissions>
         <app-op-permissions>
             <app-op-permission name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -1118,6 +1120,7 @@
 
     <role
         name="android.app.role.COMPANION_DEVICE_GLASSES"
+        behavior="CompanionDeviceGlassesRoleBehavior"
         description="@string/role_companion_device_glasses_description"
         exclusive="false"
         minSdkVersion="34"
@@ -1127,9 +1130,13 @@
             <permission-set name="contacts" />
             <permission-set name="microphone" />
             <permission-set name="nearby_devices" />
+            <permission-set name="notifications" />
             <permission-set name="phone" />
             <permission-set name="sms" />
        </permissions>
+       <app-op-permissions>
+           <app-op-permission name="android.permission.MANAGE_ONGOING_CALLS" />
+       </app-op-permissions>
     </role>
 
     <role
@@ -1158,6 +1165,7 @@
         visible="false" >
         <permissions>
             <permission name="android.permission.ACCESS_INSTANT_APPS"/>
+            <permission name="android.permission.KILL_UID" minSdkVersion="34"/>
             <permission name="android.permission.SUSPEND_APPS"/>
             <permission name="android.permission.SYSTEM_APPLICATION_OVERLAY"/>
         </permissions>
@@ -1393,5 +1401,64 @@
         <permissions>
             <permission name="android.permission.MANAGE_DEVICE_LOCK_STATE" />
         </permissions>
+    </role>
+
+    <!---
+      ~ A role for the wear health service that handles health/fitness tracking features.
+    -->
+    <role
+        name="android.app.role.SYSTEM_WEAR_HEALTH_SERVICE"
+        behavior="SystemWearHealthServiceRoleBehavior"
+        defaultHolders="config_systemWearHealthService"
+        exclusive="true"
+        minSdkVersion="33"
+        static="true"
+        systemOnly="true"
+        visible="false">
+        <permissions>
+            <permission-set name="sensors" />
+            <permission-set name="location" />
+            <permission name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+            <permission name="android.permission.ACTIVITY_RECOGNITION" />
+        </permissions>
+    </role>
+
+    <!---
+      ~ A role for the package that responds to system notes actions.
+    -->
+    <role
+        name="android.app.role.NOTES"
+        behavior="NotesRoleBehavior"
+        defaultHolders="config_defaultNotes"
+        description="@string/role_notes_description"
+        exclusive="true"
+        label="@string/role_notes_label"
+        minSdkVersion="34"
+        overrideUserWhenGranting="true"
+        requestable="false"
+        searchKeywords="@string/role_notes_search_keywords"
+        shortLabel="@string/role_notes_short_label"
+        showNone="true">
+        <required-components>
+            <!-- Flag value is FLAG_SHOW_WHEN_LOCKED | FLAG_TURN_SCREEN_ON -->
+            <activity flags="0x1800000">
+                <intent-filter>
+                    <action name="android.intent.action.CREATE_NOTE" />
+                </intent-filter>
+            </activity>
+        </required-components>
+        <preferred-activities>
+            <preferred-activity>
+                <!-- Flag value is FLAG_SHOW_WHEN_LOCKED | FLAG_TURN_SCREEN_ON -->
+                <activity flags="0x1800000">
+                    <intent-filter>
+                        <action name="android.intent.action.CREATE_NOTE" />
+                    </intent-filter>
+                </activity>
+                <intent-filter>
+                    <action name="android.intent.action.CREATE_NOTE" />
+                </intent-filter>
+            </preferred-activity>
+        </preferred-activities>
     </role>
 </roles>

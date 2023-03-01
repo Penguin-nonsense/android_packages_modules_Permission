@@ -28,6 +28,7 @@ import android.safetycenter.SafetySourceData.SEVERITY_LEVEL_INFORMATION
 import android.safetycenter.SafetySourceData.SEVERITY_LEVEL_UNSPECIFIED
 import android.safetycenter.SafetySourceIssue
 import android.safetycenter.SafetySourceIssue.Action
+import android.safetycenter.SafetySourceIssue.Action.ConfirmationDialogDetails
 import android.safetycenter.SafetySourceIssue.ISSUE_CATEGORY_ACCOUNT
 import android.safetycenter.SafetySourceIssue.ISSUE_CATEGORY_DEVICE
 import android.safetycenter.SafetySourceIssue.ISSUE_CATEGORY_GENERAL
@@ -39,7 +40,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.ext.truth.os.ParcelableSubject.assertThat
 import androidx.test.filters.SdkSuppress
 import com.android.modules.utils.build.SdkLevel
-import com.android.permission.testing.EqualsHashCodeToStringTester
+import com.android.safetycenter.testing.EqualsHashCodeToStringTester
 import com.google.common.truth.Truth.assertThat
 import kotlin.test.assertFailsWith
 import org.junit.Assume.assumeFalse
@@ -85,7 +86,9 @@ class SafetySourceIssueTest {
     @Test
     fun action_willResolve_whenSetExplicitly_returnsWillResolve() {
         val action =
-            Action.Builder("action_id", "Action label", pendingIntent1).setWillResolve(true).build()
+            Action.Builder("action_id", "Action label", pendingIntentService)
+                .setWillResolve(true)
+                .build()
 
         assertThat(action.willResolve()).isTrue()
     }
@@ -115,6 +118,51 @@ class SafetySourceIssueTest {
     }
 
     @Test
+    @SdkSuppress(maxSdkVersion = TIRAMISU)
+    fun action_getConfirmationDialogDetails_withVersionLessThanU_throwsUnsupportedOperation() {
+        // TODO(b/258228790): Remove after U is no longer in pre-release
+        assumeFalse(Build.VERSION.CODENAME == "UpsideDownCake")
+        val action = Action.Builder("action_id", "Action label", pendingIntent1).build()
+
+        assertFailsWith(UnsupportedOperationException::class) { action.confirmationDialogDetails }
+    }
+
+    @Test
+    @SdkSuppress(maxSdkVersion = TIRAMISU)
+    fun action_setConfirmationDialogDetails_withVersionLessThanU_throwsUnsupportedOperation() {
+        // TODO(b/258228790): Remove after U is no longer in pre-release
+        assumeFalse(Build.VERSION.CODENAME == "UpsideDownCake")
+        assertFailsWith(UnsupportedOperationException::class) {
+            Action.Builder("action_id", "Action label", pendingIntent1)
+                .setConfirmationDialogDetails(
+                    ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+                )
+        }
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun action_getConfirmationDialogDetails_withDefaultBuilder_returnsNull() {
+        val action = Action.Builder("action_id", "Action label", pendingIntent1).build()
+
+        assertThat(action.confirmationDialogDetails).isNull()
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun action_getConfirmationDialogDetails_whenSetExplicitly_returnsConfirmation() {
+        val action =
+            Action.Builder("action_id", "Action label", pendingIntent1)
+                .setConfirmationDialogDetails(
+                    ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+                )
+                .build()
+
+        assertThat(action.confirmationDialogDetails)
+            .isEqualTo(ConfirmationDialogDetails("Title", "Text", "Accept", "Deny"))
+    }
+
+    @Test
     fun action_build_withNullId_throwsNullPointerException() {
         assertFailsWith(NullPointerException::class) {
             Action.Builder(Generic.asNull(), "Action label", pendingIntent1)
@@ -136,6 +184,14 @@ class SafetySourceIssueTest {
     }
 
     @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun action_build_withActivityPendingIntentAndWillResolve_throwsIllegalArgumentException() {
+        assertFailsWith(IllegalArgumentException::class) {
+            Action.Builder("action_id", "Action label", pendingIntent1).setWillResolve(true).build()
+        }
+    }
+
+    @Test
     fun action_describeContents_returns0() {
         val action = Action.Builder("action_id", "Action label", pendingIntent1).build()
 
@@ -153,37 +209,84 @@ class SafetySourceIssueTest {
     }
 
     @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun action_parcelRoundTrip_recreatesEqual_atLeastAndroidU() {
+        val action =
+            Action.Builder("action_id", "Action label", pendingIntent1)
+                .setConfirmationDialogDetails(
+                    ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+                )
+                .build()
+
+        assertThat(action).recreatesEqual(Action.CREATOR)
+    }
+
+    @Test
     fun action_equalsHashCodeToString_usingEqualsHashCodeToStringTester() {
-        EqualsHashCodeToStringTester()
+        actionNewTiramisuEqualsHashCodeToStringTester().test()
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun action_equalsHashCodeToString_usingEqualsHashCodeToStringTester_atLeastAndroidU() {
+        val confirmationDialogDetails = ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+        actionNewTiramisuEqualsHashCodeToStringTester(
+                createCopyFromBuilder = { Action.Builder(it).build() }
+            )
             .addEqualityGroup(
-                Action.Builder("action_id", "Action label", pendingIntent1).build(),
-                Action.Builder("action_id", "Action label", pendingIntent1).build(),
                 Action.Builder("action_id", "Action label", pendingIntent1)
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build(),
+                Action.Builder("action_id", "Action label", pendingIntent1)
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build(),
+                Action.Builder("action_id", "Action label", pendingIntent1)
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
                     .setWillResolve(false)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 Action.Builder("action_id", "Action label", pendingIntent1)
                     .setSuccessMessage("Action successfully completed")
-                    .build())
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build()
+            )
             .addEqualityGroup(
-                Action.Builder("action_id", "Other action label", pendingIntent1).build())
+                Action.Builder("action_id", "Other action label", pendingIntent1)
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build()
+            )
             .addEqualityGroup(
-                Action.Builder("other_action_id", "Action label", pendingIntent1).build())
+                Action.Builder("other_action_id", "Action label", pendingIntent1)
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build()
+            )
             .addEqualityGroup(
-                Action.Builder("action_id", "Action label", pendingIntent1)
+                Action.Builder("action_id", "Action label", pendingIntentService)
                     .setWillResolve(true)
-                    .build())
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build()
+            )
             .addEqualityGroup(
                 Action.Builder(
                         "action_id",
                         "Action label",
                         PendingIntent.getActivity(
-                            context, 0, Intent("Other action PendingIntent"), FLAG_IMMUTABLE))
-                    .build())
+                            context,
+                            0,
+                            Intent("Other action PendingIntent"),
+                            FLAG_IMMUTABLE
+                        )
+                    )
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build()
+            )
             .addEqualityGroup(
                 Action.Builder("action_id", "Action label", pendingIntent1)
                     .setSuccessMessage("Other action successfully completed")
-                    .build())
+                    .setConfirmationDialogDetails(confirmationDialogDetails)
+                    .build()
+            )
             .test()
     }
 
@@ -290,23 +393,31 @@ class SafetySourceIssueTest {
 
     @Test
     @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
-    fun notification_builder_setActions_withNull_throwsIllegalArgumentException() {
-        assertFailsWith(NullPointerException::class) {
-            Notification.Builder("", "").setActions(Generic.asNull())
-        }
+    fun notification_builder_addActions_keepsPreviouslyAddedActions() {
+        val notificationBuilder = Notification.Builder("", "").addAction(action1)
+
+        notificationBuilder.addActions(listOf(action2))
+
+        assertThat(notificationBuilder.build().actions).containsExactly(action1, action2).inOrder()
     }
 
     @Test
     @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
-    fun notification_builder_setActions_removesAllPreviouslyAddedActions() {
-        val notification =
-            Notification.Builder("", "")
-                .addAction(action1)
-                .addAction(action2)
-                .setActions(listOf(action3))
-                .build()
+    fun notification_builder_addActions_doesNotMutatePreviouslyBuiltInstance() {
+        val notificationBuilder = Notification.Builder("", "").addActions(listOf(action1))
+        val actions = notificationBuilder.build().actions
 
-        assertThat(notification.actions).containsExactly(action3)
+        notificationBuilder.addActions(listOf(action2, action3))
+
+        assertThat(actions).containsExactly(action1)
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun notification_builder_addActions_withNull_throwsIllegalArgumentException() {
+        assertFailsWith(NullPointerException::class) {
+            Notification.Builder("", "").addActions(Generic.asNull())
+        }
     }
 
     @Test
@@ -357,7 +468,10 @@ class SafetySourceIssueTest {
     @Test
     @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
     fun notification_equalsHashCodeToString_usingEqualsHashCodeToStringTester() {
-        EqualsHashCodeToStringTester()
+        EqualsHashCodeToStringTester.ofParcelable(
+                parcelableCreator = Notification.CREATOR,
+                createCopy = { Notification.Builder(it).build() }
+            )
             .addEqualityGroup(
                 Notification.Builder("Title", "Text").build(),
                 Notification.Builder("Title", "Text").build(),
@@ -367,7 +481,74 @@ class SafetySourceIssueTest {
             .addEqualityGroup(Notification.Builder("Title", "Text").addAction(action1).build())
             .addEqualityGroup(Notification.Builder("Title", "Text").addAction(action2).build())
             .addEqualityGroup(
-                Notification.Builder("Title", "Text").addAction(action1).addAction(action2).build())
+                Notification.Builder("Title", "Text").addAction(action1).addAction(action2).build(),
+                Notification.Builder("Title", "Text").addActions(listOf(action1, action2)).build()
+            )
+            .test()
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun actionConfirmation_getTitle_returnsTitle() {
+        val confirmationDialogDetails = ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+
+        assertThat(confirmationDialogDetails.title).isEqualTo("Title")
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun actionConfirmation_getText_returnsText() {
+        val confirmationDialogDetails = ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+
+        assertThat(confirmationDialogDetails.text).isEqualTo("Text")
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun actionConfirmation_getAcceptButtonText_returnsAcceptButtonText() {
+        val confirmationDialogDetails = ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+
+        assertThat(confirmationDialogDetails.acceptButtonText).isEqualTo("Accept")
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun actionConfirmation_getDenyButtonText_returnsDenyButtonText() {
+        val confirmationDialogDetails = ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+
+        assertThat(confirmationDialogDetails.denyButtonText).isEqualTo("Deny")
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun actionConfirmation_describeContents_returns0() {
+        val confirmationDialogDetails = ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+
+        assertThat(confirmationDialogDetails.describeContents()).isEqualTo(0)
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun actionConfirmation_parcelRoundTrip_recreatesEqual() {
+        val confirmationDialogDetails = ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+
+        assertThat(confirmationDialogDetails).recreatesEqual(ConfirmationDialogDetails.CREATOR)
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun actionConfirmation_equalsHashCodeToString_usingEqualsHashCodeToStringTester() {
+        EqualsHashCodeToStringTester.ofParcelable(
+                parcelableCreator = ConfirmationDialogDetails.CREATOR
+            )
+            .addEqualityGroup(
+                ConfirmationDialogDetails("Title", "Text", "Accept", "Deny"),
+                ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+            )
+            .addEqualityGroup(ConfirmationDialogDetails("Other title", "Text", "Accept", "Deny"))
+            .addEqualityGroup(ConfirmationDialogDetails("Title", "Other text", "Accept", "Deny"))
+            .addEqualityGroup(ConfirmationDialogDetails("Title", "Text", "Other accept", "Deny"))
+            .addEqualityGroup(ConfirmationDialogDetails("Title", "Text", "Accept", "Other deny"))
             .test()
     }
 
@@ -379,7 +560,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -394,7 +576,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -409,7 +592,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -424,7 +608,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .setSubtitle("Issue subtitle")
                 .addAction(action1)
                 .build()
@@ -440,7 +625,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -456,7 +642,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -472,7 +659,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setAttributionTitle("attribution title")
                 .build()
@@ -491,7 +679,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -509,7 +698,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         assertFailsWith(UnsupportedOperationException::class) {
             safetySourceIssueBuilder.setAttributionTitle("title")
@@ -524,7 +714,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -539,7 +730,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -554,7 +746,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setIssueCategory(ISSUE_CATEGORY_DEVICE)
                 .build()
@@ -571,7 +764,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setIssueCategory(SafetySourceIssue.ISSUE_CATEGORY_PASSWORDS)
                 .build()
@@ -588,7 +782,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .addAction(action2)
                 .build()
@@ -604,7 +799,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .addAction(action2)
                 .build()
@@ -621,7 +817,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
         val actions = safetySourceIssueBuilder.build().actions
 
@@ -638,7 +835,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .addAction(action2)
                 .clearActions()
@@ -656,7 +854,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -671,7 +870,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setOnDismissPendingIntent(pendingIntentService)
                 .build()
@@ -688,7 +888,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -704,7 +905,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setDeduplicationId("deduplication_id")
                 .build()
@@ -723,7 +925,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -741,7 +944,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         assertFailsWith(UnsupportedOperationException::class) {
             safetySourceIssueBuilder.setDeduplicationId("id")
@@ -756,7 +960,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -772,7 +977,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -788,19 +994,22 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setCustomNotification(
                     Notification.Builder("Notification title", "Notification text")
                         .addAction(action2)
-                        .build())
+                        .build()
+                )
                 .build()
 
         assertThat(safetySourceIssue.customNotification)
             .isEqualTo(
                 Notification.Builder("Notification title", "Notification text")
                     .addAction(action2)
-                    .build())
+                    .build()
+            )
     }
 
     @Test
@@ -814,7 +1023,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -834,7 +1044,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         assertFailsWith(UnsupportedOperationException::class) {
             safetySourceIssueBuilder.setCustomNotification(null)
@@ -850,7 +1061,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -867,7 +1079,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setNotificationBehavior(SafetySourceIssue.NOTIFICATION_BEHAVIOR_NEVER)
                 .build()
@@ -887,7 +1100,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -905,7 +1119,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         val exception =
             assertFailsWith(IllegalArgumentException::class) { builder.setNotificationBehavior(-1) }
@@ -926,7 +1141,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         assertFailsWith(UnsupportedOperationException::class) {
             safetySourceIssueBuilder.setNotificationBehavior(0)
@@ -942,7 +1158,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -959,7 +1176,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_AUTOMATIC)
                 .build()
@@ -979,7 +1197,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .build()
 
@@ -997,7 +1216,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         val exception =
             assertFailsWith(IllegalArgumentException::class) { builder.setIssueActionability(-1) }
@@ -1018,7 +1238,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         assertFailsWith(UnsupportedOperationException::class) {
             safetySourceIssueBuilder.setIssueActionability(0)
@@ -1033,7 +1254,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
         }
     }
 
@@ -1045,7 +1267,8 @@ class SafetySourceIssueTest {
                 Generic.asNull(),
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
         }
     }
 
@@ -1057,7 +1280,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 Generic.asNull(),
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
         }
     }
 
@@ -1070,7 +1294,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_UNSPECIFIED,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
             }
         assertThat(exception)
             .hasMessageThat()
@@ -1082,7 +1307,12 @@ class SafetySourceIssueTest {
         val exception =
             assertFailsWith(IllegalArgumentException::class) {
                 SafetySourceIssue.Builder(
-                    "Issue id", "Issue title", "Issue summary", -1, "issue_type_id")
+                    "Issue id",
+                    "Issue title",
+                    "Issue summary",
+                    -1,
+                    "issue_type_id"
+                )
             }
         assertThat(exception)
             .hasMessageThat()
@@ -1097,7 +1327,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                Generic.asNull())
+                Generic.asNull()
+            )
         }
     }
 
@@ -1109,7 +1340,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         val exception =
             assertFailsWith(IllegalArgumentException::class) { builder.setIssueCategory(-1) }
@@ -1130,7 +1362,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
 
         val exception =
@@ -1149,7 +1382,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
         val exception =
             assertFailsWith(IllegalArgumentException::class) {
                 builder.setOnDismissPendingIntent(
@@ -1157,7 +1391,9 @@ class SafetySourceIssueTest {
                         context,
                         /* requestCode = */ 0,
                         Intent("PendingIntent activity"),
-                        FLAG_IMMUTABLE))
+                        FLAG_IMMUTABLE
+                    )
+                )
             }
         assertThat(exception)
             .hasMessageThat()
@@ -1172,7 +1408,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .addAction(action1)
 
@@ -1191,7 +1428,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         val exception =
             assertFailsWith(IllegalArgumentException::class) { safetySourceIssueBuilder.build() }
@@ -1203,7 +1441,8 @@ class SafetySourceIssueTest {
                     "Actionable safety source issue must contain at least 1 action"
                 } else {
                     "Safety source issue must contain at least 1 action"
-                })
+                }
+            )
     }
 
     @Test
@@ -1214,7 +1453,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .addAction(action1)
                 .addAction(action2)
                 .addAction(action3)
@@ -1235,7 +1475,8 @@ class SafetySourceIssueTest {
                 "Issue title",
                 "Issue summary",
                 SEVERITY_LEVEL_INFORMATION,
-                "issue_type_id")
+                "issue_type_id"
+            )
 
         val exception =
             assertFailsWith(IllegalArgumentException::class) { safetySourceIssueBuilder.build() }
@@ -1254,7 +1495,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_TIP)
                 .build()
 
@@ -1270,7 +1512,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_AUTOMATIC)
                 .build()
 
@@ -1285,7 +1528,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .setSubtitle("Issue subtitle")
                 .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                 .addAction(action1)
@@ -1304,10 +1548,38 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .setSubtitle("Issue subtitle")
                 .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                 .addAction(action1)
+                .addAction(action2)
+                .setOnDismissPendingIntent(pendingIntentService)
+                .build()
+
+        assertThat(safetySourceIssue).recreatesEqual(SafetySourceIssue.CREATOR)
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun parcelRoundTrip_recreatesEqual_atLeastAndroidU() {
+        val safetySourceIssue =
+            SafetySourceIssue.Builder(
+                    "Issue id",
+                    "Issue title",
+                    "Issue summary",
+                    SEVERITY_LEVEL_INFORMATION,
+                    "issue_type_id"
+                )
+                .setSubtitle("Issue subtitle")
+                .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
+                .addAction(
+                    Action.Builder(action1)
+                        .setConfirmationDialogDetails(
+                            ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+                        )
+                        .build()
+                )
                 .addAction(action2)
                 .setOnDismissPendingIntent(pendingIntentService)
                 .build()
@@ -1324,7 +1596,8 @@ class SafetySourceIssueTest {
                     "Issue title",
                     "Issue summary",
                     SEVERITY_LEVEL_INFORMATION,
-                    "issue_type_id")
+                    "issue_type_id"
+                )
                 .setSubtitle("Issue subtitle")
                 .setIssueCategory(SafetySourceIssue.ISSUE_CATEGORY_DATA)
                 .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_TIP)
@@ -1334,7 +1607,8 @@ class SafetySourceIssueTest {
                 .setCustomNotification(
                     Notification.Builder("Notification title", "Notification text")
                         .addAction(action2)
-                        .build())
+                        .build()
+                )
                 .setNotificationBehavior(SafetySourceIssue.NOTIFICATION_BEHAVIOR_DELAYED)
                 .setAttributionTitle("attribution title")
                 .setDeduplicationId("deduplication_id")
@@ -1361,14 +1635,17 @@ class SafetySourceIssueTest {
      */
     @RequiresApi(UPSIDE_DOWN_CAKE)
     private fun newUpsideDownCakeEqualsHashCodeToStringTester() =
-        newTiramisuEqualsHashCodeToStringTester()
+        newTiramisuEqualsHashCodeToStringTester(
+                createCopyFromBuilder = { SafetySourceIssue.Builder(it).build() }
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
@@ -1378,15 +1655,18 @@ class SafetySourceIssueTest {
                     .setCustomNotification(
                         Notification.Builder("Notification title", "Notification text")
                             .addAction(action2)
-                            .build())
-                    .build())
+                            .build()
+                    )
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
@@ -1394,17 +1674,18 @@ class SafetySourceIssueTest {
                     .setOnDismissPendingIntent(pendingIntentService)
                     .setNotificationBehavior(SafetySourceIssue.NOTIFICATION_BEHAVIOR_IMMEDIATELY)
                     .setCustomNotification(
-                        Notification.Builder("Other title", "Other text")
-                            .addAction(action2)
-                            .build())
-                    .build())
+                        Notification.Builder("Other title", "Other text").addAction(action2).build()
+                    )
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
@@ -1417,31 +1698,36 @@ class SafetySourceIssueTest {
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
                     .addAction(action2)
                     .setOnDismissPendingIntent(pendingIntentService)
                     .setAttributionTitle("attribution title")
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_CRITICAL_WARNING,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setAttributionTitle("Other issue attribution title")
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
@@ -1455,7 +1741,8 @@ class SafetySourceIssueTest {
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
@@ -1463,14 +1750,16 @@ class SafetySourceIssueTest {
                     .setOnDismissPendingIntent(pendingIntentService)
                     .setAttributionTitle("attribution title")
                     .setDeduplicationId("deduplication_id")
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
@@ -1478,60 +1767,70 @@ class SafetySourceIssueTest {
                     .setOnDismissPendingIntent(pendingIntentService)
                     .setAttributionTitle("attribution title")
                     .setDeduplicationId("other_deduplication_id")
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Other issue subtitle")
                     .setIssueCategory(SafetySourceIssue.ISSUE_CATEGORY_DATA)
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Other issue subtitle")
                     .setIssueCategory(SafetySourceIssue.ISSUE_CATEGORY_PASSWORDS)
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Other issue subtitle")
                     .setIssueCategory(SafetySourceIssue.ISSUE_CATEGORY_PERSONAL_SAFETY)
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_MANUAL)
                     .addAction(action1)
                     .setAttributionTitle("Attribution title")
                     .setDeduplicationId("dedup_id")
                     .setNotificationBehavior(SafetySourceIssue.NOTIFICATION_BEHAVIOR_NEVER)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_TIP)
                     .addAction(action1)
                     .build(),
@@ -1540,53 +1839,109 @@ class SafetySourceIssueTest {
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_TIP)
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_AUTOMATIC)
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_AUTOMATIC)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setNotificationBehavior(SafetySourceIssue.NOTIFICATION_BEHAVIOR_DELAYED)
                     .setIssueActionability(SafetySourceIssue.ISSUE_ACTIONABILITY_AUTOMATIC)
-                    .build())
+                    .build()
+            )
+            .addEqualityGroup(
+                SafetySourceIssue.Builder(
+                        "Issue id",
+                        "Issue title",
+                        "Issue summary",
+                        SEVERITY_LEVEL_INFORMATION,
+                        "issue_type_id"
+                    )
+                    .setSubtitle("Issue subtitle")
+                    .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
+                    .addAction(
+                        Action.Builder(action1)
+                            .setConfirmationDialogDetails(
+                                ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+                            )
+                            .build()
+                    )
+                    .addAction(action2)
+                    .setOnDismissPendingIntent(pendingIntentService)
+                    .build()
+            )
+            .addEqualityGroup(
+                SafetySourceIssue.Builder(
+                        "Issue id",
+                        "Issue title",
+                        "Issue summary",
+                        SEVERITY_LEVEL_INFORMATION,
+                        "issue_type_id"
+                    )
+                    .setSubtitle("Issue subtitle")
+                    .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
+                    .addAction(action1)
+                    .addAction(
+                        Action.Builder(action2)
+                            .setConfirmationDialogDetails(
+                                ConfirmationDialogDetails("Title", "Text", "Accept", "Deny")
+                            )
+                            .build()
+                    )
+                    .setOnDismissPendingIntent(pendingIntentService)
+                    .build()
+            )
 
     /**
      * Creates a new [EqualsHashCodeToStringTester] instance which covers all the fields in the T
      * API and is safe to use on any T+ API level.
      */
-    private fun newTiramisuEqualsHashCodeToStringTester() =
-        EqualsHashCodeToStringTester()
+    private fun newTiramisuEqualsHashCodeToStringTester(
+        createCopyFromBuilder: ((SafetySourceIssue) -> SafetySourceIssue)? = null
+    ) =
+        EqualsHashCodeToStringTester.ofParcelable(
+                parcelableCreator = SafetySourceIssue.CREATOR,
+                createCopy = createCopyFromBuilder
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
@@ -1598,128 +1953,206 @@ class SafetySourceIssueTest {
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
                     .addAction(action2)
                     .setOnDismissPendingIntent(pendingIntentService)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Other issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Other issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Different issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_CRITICAL_WARNING,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "other_issue_type_id")
+                        "other_issue_type_id"
+                    )
                     .addAction(action1)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .addAction(action2)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Other issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_ACCOUNT)
                     .addAction(action1)
                     .addAction(action2)
                     .setOnDismissPendingIntent(pendingIntentService)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Other issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_DEVICE)
                     .addAction(action1)
                     .addAction(action2)
                     .setOnDismissPendingIntent(pendingIntentService)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Other issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_DEVICE)
                     .addAction(action2)
                     .addAction(action1)
                     .setOnDismissPendingIntent(pendingIntentService)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetySourceIssue.Builder(
                         "Issue id",
                         "Issue title",
                         "Issue summary",
                         SEVERITY_LEVEL_INFORMATION,
-                        "issue_type_id")
+                        "issue_type_id"
+                    )
                     .setSubtitle("Other issue subtitle")
                     .setIssueCategory(ISSUE_CATEGORY_DEVICE)
                     .addAction(action2)
                     .addAction(action1)
                     .setOnDismissPendingIntent(
                         PendingIntent.getService(
-                            context, 0, Intent("Other PendingIntent service"), FLAG_IMMUTABLE))
-                    .build())
+                            context,
+                            0,
+                            Intent("Other PendingIntent service"),
+                            FLAG_IMMUTABLE
+                        )
+                    )
+                    .build()
+            )
+
+    private fun actionNewTiramisuEqualsHashCodeToStringTester(
+        createCopyFromBuilder: ((Action) -> Action)? = null
+    ) =
+        EqualsHashCodeToStringTester.ofParcelable(
+                parcelableCreator = Action.CREATOR,
+                createCopy = createCopyFromBuilder
+            )
+            .addEqualityGroup(
+                Action.Builder("action_id", "Action label", pendingIntent1).build(),
+                Action.Builder("action_id", "Action label", pendingIntent1).build(),
+                Action.Builder("action_id", "Action label", pendingIntent1)
+                    .setWillResolve(false)
+                    .build()
+            )
+            .addEqualityGroup(
+                Action.Builder("action_id", "Action label", pendingIntent1)
+                    .setSuccessMessage("Action successfully completed")
+                    .build()
+            )
+            .addEqualityGroup(
+                Action.Builder("action_id", "Other action label", pendingIntent1).build()
+            )
+            .addEqualityGroup(
+                Action.Builder("other_action_id", "Action label", pendingIntent1).build()
+            )
+            .addEqualityGroup(
+                Action.Builder("action_id", "Action label", pendingIntentService)
+                    .setWillResolve(true)
+                    .build()
+            )
+            .addEqualityGroup(
+                Action.Builder(
+                        "action_id",
+                        "Action label",
+                        PendingIntent.getActivity(
+                            context,
+                            0,
+                            Intent("Other action PendingIntent"),
+                            FLAG_IMMUTABLE
+                        )
+                    )
+                    .build()
+            )
+            .addEqualityGroup(
+                Action.Builder("action_id", "Action label", pendingIntent1)
+                    .setSuccessMessage("Other action successfully completed")
+                    .build()
+            )
 }

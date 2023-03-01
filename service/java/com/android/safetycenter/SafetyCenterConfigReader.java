@@ -24,8 +24,6 @@ import static java.util.Objects.requireNonNull;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.res.Resources;
-import android.safetycenter.SafetyCenterManager;
-import android.safetycenter.SafetyCenterManager.RefreshReason;
 import android.safetycenter.config.SafetyCenterConfig;
 import android.safetycenter.config.SafetySource;
 import android.safetycenter.config.SafetySourcesGroup;
@@ -50,10 +48,12 @@ import javax.annotation.concurrent.NotThreadSafe;
  * A class that reads the {@link SafetyCenterConfig} and allows overriding it for tests.
  *
  * <p>This class isn't thread safe. Thread safety must be handled by the caller.
+ *
+ * @hide
  */
 @RequiresApi(TIRAMISU)
 @NotThreadSafe
-final class SafetyCenterConfigReader {
+public final class SafetyCenterConfigReader {
 
     private static final String TAG = "SafetyCenterConfigReade";
 
@@ -120,7 +120,7 @@ final class SafetyCenterConfigReader {
      * SafetySources#isLoggable(SafetySource)} is false (and any resultingly empty groups).
      */
     @NonNull
-    List<SafetySourcesGroup> getLoggableSafetySourcesGroups() {
+    public List<SafetySourcesGroup> getLoggableSafetySourcesGroups() {
         return getCurrentConfigInternal().getLoggableSourcesGroups();
     }
 
@@ -134,7 +134,7 @@ final class SafetyCenterConfigReader {
      * calls will be no-oped).
      */
     @Nullable
-    ExternalSafetySource getExternalSafetySource(@NonNull String safetySourceId) {
+    public ExternalSafetySource getExternalSafetySource(@NonNull String safetySourceId) {
         ExternalSafetySource externalSafetySourceInCurrentConfig =
                 getCurrentConfigInternal().getExternalSafetySources().get(safetySourceId);
         if (externalSafetySourceInCurrentConfig != null) {
@@ -148,12 +148,12 @@ final class SafetyCenterConfigReader {
      * Returns whether the {@code safetySourceId} is associated with an external {@link
      * SafetySource} that is currently active.
      */
-    boolean isExternalSafetySourceActive(@NonNull String safetySourceId) {
+    public boolean isExternalSafetySourceActive(@NonNull String safetySourceId) {
         return getCurrentConfigInternal().getExternalSafetySources().containsKey(safetySourceId);
     }
 
     /** Returns whether the {@link SafetyCenterConfig} allows logging to statsd. */
-    boolean allowsStatsdLogging() {
+    public boolean allowsStatsdLogging() {
         if (!isOverrideForTestsActive()) {
             return true;
         }
@@ -191,13 +191,13 @@ final class SafetyCenterConfigReader {
     private SafetyCenterConfig readSafetyCenterConfig() {
         InputStream in = mSafetyCenterResourcesContext.getSafetyCenterConfig();
         if (in == null) {
-            Log.e(TAG, "Cannot get safety center config file");
+            Log.e(TAG, "Cannot get safety center config file, safety center will be disabled.");
             return null;
         }
 
         Resources resources = mSafetyCenterResourcesContext.getResources();
         if (resources == null) {
-            Log.e(TAG, "Cannot get safety center resources");
+            Log.e(TAG, "Cannot get safety center resources, safety center will be disabled.");
             return null;
         }
 
@@ -207,7 +207,7 @@ final class SafetyCenterConfigReader {
             Log.i(TAG, "SafetyCenterConfig read successfully");
             return safetyCenterConfig;
         } catch (ParseException e) {
-            Log.e(TAG, "Cannot read SafetyCenterConfig", e);
+            Log.e(TAG, "Cannot read SafetyCenterConfig, safety center will be disabled.", e);
             return null;
         }
     }
@@ -384,14 +384,14 @@ final class SafetyCenterConfigReader {
                         broadcasts.add(broadcast);
                     }
                     broadcast.mSourceIdsForProfileParent.add(safetySource.getId());
-                    if (isRefreshOnPageOpenAllowedAfterApplyingOverrides(safetySource)) {
+                    if (safetySource.isRefreshOnPageOpenAllowed()) {
                         broadcast.mSourceIdsForProfileParentOnPageOpen.add(safetySource.getId());
                     }
                     boolean needsManagedProfilesBroadcast =
                             SafetySources.supportsManagedProfiles(safetySource);
                     if (needsManagedProfilesBroadcast) {
                         broadcast.mSourceIdsForManagedProfiles.add(safetySource.getId());
-                        if (isRefreshOnPageOpenAllowedAfterApplyingOverrides(safetySource)) {
+                        if (safetySource.isRefreshOnPageOpenAllowed()) {
                             broadcast.mSourceIdsForManagedProfilesOnPageOpen.add(
                                     safetySource.getId());
                         }
@@ -403,15 +403,12 @@ final class SafetyCenterConfigReader {
         }
     }
 
-    private static boolean isRefreshOnPageOpenAllowedAfterApplyingOverrides(
-            SafetySource safetySource) {
-        return safetySource.isRefreshOnPageOpenAllowed()
-                || SafetyCenterFlags.getOverrideRefreshOnPageOpenSourceIds()
-                        .contains(safetySource.getId());
-    }
-
-    /** A wrapper class around a {@link SafetySource} that is providing data externally. */
-    static final class ExternalSafetySource {
+    /**
+     * A wrapper class around a {@link SafetySource} that is providing data externally.
+     *
+     * @hide
+     */
+    public static final class ExternalSafetySource {
         @NonNull private final SafetySource mSafetySource;
         @NonNull private final boolean mHasEntryInStatelessGroup;
 
@@ -423,7 +420,7 @@ final class SafetyCenterConfigReader {
 
         /** Returns the external {@link SafetySource}. */
         @NonNull
-        SafetySource getSafetySource() {
+        public SafetySource getSafetySource() {
             return mSafetySource;
         }
 
@@ -431,7 +428,7 @@ final class SafetyCenterConfigReader {
          * Returns whether the external {@link SafetySource} has an entry in a stateless {@link
          * SafetySourcesGroup}.
          */
-        boolean hasEntryInStatelessGroup() {
+        public boolean hasEntryInStatelessGroup() {
             return mHasEntryInStatelessGroup;
         }
 
@@ -484,30 +481,42 @@ final class SafetyCenterConfigReader {
          * Returns the safety source ids associated with this broadcast in the profile owner.
          *
          * <p>If this list is empty, there are no sources to dispatch to in the profile owner.
-         *
-         * @param refreshReason the {@link RefreshReason} for the broadcast
          */
         @NonNull
-        List<String> getSourceIdsForProfileParent(@RefreshReason int refreshReason) {
-            if (refreshReason == SafetyCenterManager.REFRESH_REASON_PAGE_OPEN) {
-                return unmodifiableList(mSourceIdsForProfileParentOnPageOpen);
-            }
+        List<String> getSourceIdsForProfileParent() {
             return unmodifiableList(mSourceIdsForProfileParent);
+        }
+
+        /**
+         * Returns the safety source ids associated with this broadcast in the profile owner that
+         * have refreshOnPageOpenAllowed set to true in the XML config.
+         *
+         * <p>If this list is empty, there are no sources to dispatch to in the profile owner.
+         */
+        @NonNull
+        List<String> getSourceIdsForProfileParentOnPageOpen() {
+            return unmodifiableList(mSourceIdsForProfileParentOnPageOpen);
         }
 
         /**
          * Returns the safety source ids associated with this broadcast in the managed profile(s).
          *
          * <p>If this list is empty, there are no sources to dispatch to in the managed profile(s).
-         *
-         * @param refreshReason the {@link RefreshReason} for the broadcast
          */
         @NonNull
-        List<String> getSourceIdsForManagedProfiles(@RefreshReason int refreshReason) {
-            if (refreshReason == SafetyCenterManager.REFRESH_REASON_PAGE_OPEN) {
-                return unmodifiableList(mSourceIdsForManagedProfilesOnPageOpen);
-            }
+        List<String> getSourceIdsForManagedProfiles() {
             return unmodifiableList(mSourceIdsForManagedProfiles);
+        }
+
+        /**
+         * Returns the safety source ids associated with this broadcast in the managed profile(s)
+         * that have refreshOnPageOpenAllowed set to true in the XML config.
+         *
+         * <p>If this list is empty, there are no sources to dispatch to in the managed profile(s).
+         */
+        @NonNull
+        List<String> getSourceIdsForManagedProfilesOnPageOpen() {
+            return unmodifiableList(mSourceIdsForManagedProfilesOnPageOpen);
         }
 
         @Override

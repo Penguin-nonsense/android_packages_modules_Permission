@@ -16,19 +16,32 @@
 
 package com.android.permissioncontroller.permission.ui.model.v34
 
+import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.util.Log
-import androidx.core.util.Consumer
+import androidx.annotation.RequiresApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.android.permission.safetylabel.DataCategory
 import com.android.permission.safetylabel.DataType
 import com.android.permission.safetylabel.DataTypeConstants
 import com.android.permission.safetylabel.SafetyLabel
-import com.android.permissioncontroller.permission.data.SafetyLabelLiveData
+import com.android.permissioncontroller.Constants
+import com.android.permissioncontroller.permission.data.SafetyLabelInfoLiveData
 import com.android.permissioncontroller.permission.data.SmartUpdateMediatorLiveData
+import com.android.permissioncontroller.permission.data.get
+import com.android.permissioncontroller.permission.model.livedatatypes.SafetyLabelInfo.Companion.UNAVAILABLE
+import com.android.permissioncontroller.permission.ui.ManagePermissionsActivity
+import com.android.permissioncontroller.permission.ui.ManagePermissionsActivity.EXTRA_RESULT_PERMISSION_INTERACTED
+import com.android.permissioncontroller.permission.ui.ManagePermissionsActivity.EXTRA_RESULT_PERMISSION_RESULT
+import com.android.permissioncontroller.permission.ui.v34.PermissionRationaleActivity
+import com.android.permissioncontroller.permission.utils.KotlinUtils
+import com.android.permissioncontroller.permission.utils.KotlinUtils.getAppStoreIntent
 import com.android.permissioncontroller.permission.utils.SafetyLabelPermissionMapping
 
 /**
@@ -41,6 +54,7 @@ import com.android.permissioncontroller.permission.utils.SafetyLabelPermissionMa
  * @param sessionId: A long to identify this session
  * @param storedState: Previous state, if this activity was stopped and is being recreated
  */
+@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class PermissionRationaleViewModel(
     private val app: Application,
     private val packageName: String,
@@ -49,9 +63,21 @@ class PermissionRationaleViewModel(
     private val sessionId: Long,
     private val storedState: Bundle?
 ) : ViewModel() {
-    private val safetyLabelLiveData = SafetyLabelLiveData[packageName]
+    private val user = Process.myUserHandle()
+    private val safetyLabelInfoLiveData = SafetyLabelInfoLiveData[packageName, user]
 
-    var activityResultCallback: Consumer<Intent>? = null
+    /** Interface for forwarding onActivityResult to this view model */
+    interface ActivityResultCallback {
+        /**
+         * Should be invoked by base activity when a valid onActivityResult is received
+         *
+         * @param data [Intent] which may contain result data from a started Activity
+         * (various data can be attached to Intent "extras")
+         * @return {@code true} if Activity should finish after processing this result
+         */
+        fun shouldFinishActivityForResult(data: Intent?): Boolean
+    }
+    var activityResultCallback: ActivityResultCallback? = null
 
     /**
      * A class which represents a permission rationale for permission group, and messages which
@@ -59,7 +85,8 @@ class PermissionRationaleViewModel(
      */
     data class PermissionRationaleInfo(
         val groupName: String,
-        val installSourceName: String?,
+        val installSourcePackageName: String?,
+        val installSourceLabel: CharSequence?,
         val purposeSet: Set<Int>
     )
 
@@ -68,29 +95,39 @@ class PermissionRationaleViewModel(
         object : SmartUpdateMediatorLiveData<PermissionRationaleInfo>() {
 
             init {
-                addSource(safetyLabelLiveData) { onUpdate() }
+                addSource(safetyLabelInfoLiveData) { onUpdate() }
 
                 // Load package state, if available
                 onUpdate()
             }
 
             override fun onUpdate() {
-                if (safetyLabelLiveData.isStale) {
+                if (safetyLabelInfoLiveData.isStale) {
                     return
                 }
 
-                val safetyLabel = safetyLabelLiveData.value
-                if (safetyLabel == null) {
+                val safetyLabelInfo = safetyLabelInfoLiveData.value
+                val safetyLabel = safetyLabelInfo?.safetyLabel
+
+                if (safetyLabelInfo == null ||
+                    safetyLabelInfo == UNAVAILABLE ||
+                    safetyLabel == null) {
                     Log.e(LOG_TAG, "Safety label for $packageName not found")
                     value = null
                     return
                 }
 
-                // TODO(b/260144598): link to app store
+                val installSourcePackageName = safetyLabelInfo.installSourcePackageName
+                val installSourceLabel: CharSequence? =
+                    installSourcePackageName?.let {
+                        KotlinUtils.getPackageLabel(app, it, Process.myUserHandle())
+                    }
+
                 value =
                     PermissionRationaleInfo(
                         permissionGroupName,
-                        null,
+                        installSourcePackageName,
+                        installSourceLabel,
                         getSafetyLabelSharingPurposesForGroup(safetyLabel, permissionGroupName))
             }
 
@@ -124,8 +161,61 @@ class PermissionRationaleViewModel(
             }
         }
 
+    fun canLinkToAppStore(context: Context, installSourcePackageName: String): Boolean {
+        return getAppStoreIntent(context, installSourcePackageName, packageName) != null
+    }
+
+    fun sendToAppStore(context: Context, installSourcePackageName: String) {
+        val storeIntent = getAppStoreIntent(context, installSourcePackageName, packageName)
+        context.startActivity(storeIntent)
+    }
+
+    /**
+     * Send the user to the AppPermissionFragment
+     *
+     * @param activity The current activity
+     * @param groupName The name of the permission group whose fragment should be opened
+     */
+    fun sendToSettingsForPermissionGroup(activity: Activity, groupName: String) {
+        if (activityResultCallback != null) {
+            return
+        }
+        activityResultCallback = object : ActivityResultCallback {
+            override fun shouldFinishActivityForResult(data: Intent?): Boolean {
+                // TODO(b/259961958): metrics for settings return event
+                val returnGroupName = data?.getStringExtra(EXTRA_RESULT_PERMISSION_INTERACTED)
+                return (returnGroupName != null) && data.hasExtra(EXTRA_RESULT_PERMISSION_RESULT)
+            }
+        }
+        startAppPermissionFragment(activity, groupName)
+    }
+
+    /**
+     * Send the user to the Safety Label Android Help Center
+     *
+     * @param activity The current activity
+     */
+    fun sendToLearnMore(activity: Activity) {
+        // TODO(b/259963582): link to safety label help center article
+        Log.d(LOG_TAG, "Link to safety label help center not provided")
+    }
+
+    private fun startAppPermissionFragment(activity: Activity, groupName: String) {
+        val intent = Intent(Intent.ACTION_MANAGE_APP_PERMISSION)
+            .putExtra(Intent.EXTRA_PACKAGE_NAME, packageName)
+            .putExtra(Intent.EXTRA_PERMISSION_GROUP_NAME, groupName)
+            .putExtra(Intent.EXTRA_USER, user)
+            .putExtra(ManagePermissionsActivity.EXTRA_CALLER_NAME,
+                PermissionRationaleActivity::class.java.name)
+            .putExtra(Constants.EXTRA_SESSION_ID, sessionId)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        activity.startActivityForResult(intent, APP_PERMISSION_REQUEST_CODE)
+    }
+
     companion object {
         private val LOG_TAG = PermissionRationaleViewModel::class.java.simpleName
+
+        const val APP_PERMISSION_REQUEST_CODE = 1
     }
 }
 

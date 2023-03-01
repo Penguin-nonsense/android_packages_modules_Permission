@@ -16,10 +16,12 @@
 
 package android.safetycenter.cts.config
 
+import android.os.Build
 import android.safetycenter.config.SafetyCenterConfig
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.ext.truth.os.ParcelableSubject.assertThat
-import com.android.permission.testing.EqualsHashCodeToStringTester
+import androidx.test.filters.SdkSuppress
+import com.android.safetycenter.testing.EqualsHashCodeToStringTester
 import com.google.common.truth.Truth.assertThat
 import kotlin.test.assertFailsWith
 import org.junit.Test
@@ -33,7 +35,9 @@ class SafetyCenterConfigTest {
     fun getSafetySourcesGroups_returnsSafetySourcesGroups() {
         assertThat(BASE.safetySourcesGroups)
             .containsExactly(
-                SafetySourcesGroupTest.STATELESS_INFERRED, SafetySourcesGroupTest.HIDDEN_INFERRED)
+                SafetySourcesGroupTest.STATELESS_INFERRED,
+                SafetySourcesGroupTest.HIDDEN_INFERRED
+            )
             .inOrder()
     }
 
@@ -55,11 +59,14 @@ class SafetyCenterConfigTest {
         val sourceGroups = safetyCenterConfigBuilder.build().safetySourcesGroups
 
         safetyCenterConfigBuilder.addSafetySourcesGroup(
-            SafetySourcesGroupTest.STATEFUL_INFERRED_WITH_SUMMARY)
+            SafetySourcesGroupTest.STATEFUL_INFERRED_WITH_SUMMARY
+        )
 
         assertThat(sourceGroups)
             .containsExactly(
-                SafetySourcesGroupTest.STATELESS_INFERRED, SafetySourcesGroupTest.HIDDEN_INFERRED)
+                SafetySourcesGroupTest.STATELESS_INFERRED,
+                SafetySourcesGroupTest.HIDDEN_INFERRED
+            )
             .inOrder()
     }
 
@@ -75,20 +82,38 @@ class SafetyCenterConfigTest {
 
     @Test
     fun equalsHashCodeToString_usingEqualsHashCodeToStringTester() {
-        EqualsHashCodeToStringTester()
+        newTiramisuEqualsHashCodeToStringTester().test()
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codeName = "UpsideDownCake")
+    fun equalsHashCodeToString_usingEqualsHashCodeToStringTester_atLeastAndroidU() {
+        newTiramisuEqualsHashCodeToStringTester(
+                createCopyFromBuilder = { SafetyCenterConfig.Builder(it).build() }
+            )
+            .test()
+    }
+
+    private fun newTiramisuEqualsHashCodeToStringTester(
+        createCopyFromBuilder: ((SafetyCenterConfig) -> SafetyCenterConfig)? = null
+    ) =
+        EqualsHashCodeToStringTester.ofParcelable(
+                parcelableCreator = SafetyCenterConfig.CREATOR,
+                createCopy = createCopyFromBuilder
+            )
             .addEqualityGroup(
                 BASE,
                 SafetyCenterConfig.Builder()
                     .addSafetySourcesGroup(SafetySourcesGroupTest.STATELESS_INFERRED)
                     .addSafetySourcesGroup(SafetySourcesGroupTest.HIDDEN_INFERRED)
-                    .build())
+                    .build()
+            )
             .addEqualityGroup(
                 SafetyCenterConfig.Builder()
                     .addSafetySourcesGroup(SafetySourcesGroupTest.HIDDEN_INFERRED)
                     .addSafetySourcesGroup(SafetySourcesGroupTest.STATELESS_INFERRED)
-                    .build())
-            .test()
-    }
+                    .build()
+            )
 
     companion object {
         private val BASE =
