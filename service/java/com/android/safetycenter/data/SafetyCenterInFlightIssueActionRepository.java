@@ -20,9 +20,9 @@ import static android.os.Build.VERSION_CODES.TIRAMISU;
 
 import static com.android.safetycenter.internaldata.SafetyCenterIds.toUserFriendlyString;
 
-import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.UserIdInt;
+import android.content.Context;
 import android.os.SystemClock;
 import android.safetycenter.SafetyCenterData;
 import android.safetycenter.SafetySourceIssue;
@@ -31,6 +31,7 @@ import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
+import com.android.permission.util.UserUtils;
 import com.android.safetycenter.internaldata.SafetyCenterIssueActionId;
 import com.android.safetycenter.internaldata.SafetyCenterIssueKey;
 import com.android.safetycenter.logging.SafetyCenterStatsdLogger;
@@ -48,20 +49,18 @@ final class SafetyCenterInFlightIssueActionRepository {
 
     private static final String TAG = "SafetyCenterInFlight";
 
-    @NonNull private final SafetyCenterStatsdLogger mSafetyCenterStatsdLogger;
-
     private final ArrayMap<SafetyCenterIssueActionId, Long> mSafetyCenterIssueActionsInFlight =
             new ArrayMap<>();
 
+    private final Context mContext;
+
     /** Constructs a new instance of {@link SafetyCenterInFlightIssueActionRepository}. */
-    SafetyCenterInFlightIssueActionRepository(
-            @NonNull SafetyCenterStatsdLogger safetyCenterStatsdLogger) {
-        mSafetyCenterStatsdLogger = safetyCenterStatsdLogger;
+    SafetyCenterInFlightIssueActionRepository(Context context) {
+        mContext = context;
     }
 
     /** Marks the given {@link SafetyCenterIssueActionId} as in-flight. */
-    void markSafetyCenterIssueActionInFlight(
-            @NonNull SafetyCenterIssueActionId safetyCenterIssueActionId) {
+    void markSafetyCenterIssueActionInFlight(SafetyCenterIssueActionId safetyCenterIssueActionId) {
         mSafetyCenterIssueActionsInFlight.put(
                 safetyCenterIssueActionId, SystemClock.elapsedRealtime());
     }
@@ -72,8 +71,8 @@ final class SafetyCenterInFlightIssueActionRepository {
      * SafetyCenterData} changed.
      */
     boolean unmarkSafetyCenterIssueActionInFlight(
-            @NonNull SafetyCenterIssueActionId safetyCenterIssueActionId,
-            @NonNull SafetySourceIssue safetySourceIssue,
+            SafetyCenterIssueActionId safetyCenterIssueActionId,
+            @Nullable SafetySourceIssue safetySourceIssue,
             @SafetyCenterStatsdLogger.SystemEventResult int result) {
         Long startElapsedMillis =
                 mSafetyCenterIssueActionsInFlight.remove(safetyCenterIssueActionId);
@@ -89,8 +88,12 @@ final class SafetyCenterInFlightIssueActionRepository {
         String issueTypeId = safetySourceIssue == null ? null : safetySourceIssue.getIssueTypeId();
         Duration duration = Duration.ofMillis(SystemClock.elapsedRealtime() - startElapsedMillis);
 
-        mSafetyCenterStatsdLogger.writeInlineActionSystemEvent(
-                issueKey.getSafetySourceId(), issueKey.getUserId(), issueTypeId, duration, result);
+        SafetyCenterStatsdLogger.writeInlineActionSystemEvent(
+                issueKey.getSafetySourceId(),
+                UserUtils.isManagedProfile(issueKey.getUserId(), mContext),
+                issueTypeId,
+                duration,
+                result);
 
         if (safetySourceIssue == null
                 || getSafetySourceIssueAction(safetyCenterIssueActionId, safetySourceIssue)
@@ -106,7 +109,7 @@ final class SafetyCenterInFlightIssueActionRepository {
     }
 
     /** Returns {@code true} if the given issue action is in flight. */
-    boolean actionIsInFlight(@NonNull SafetyCenterIssueActionId safetyCenterIssueActionId) {
+    boolean actionIsInFlight(SafetyCenterIssueActionId safetyCenterIssueActionId) {
         return mSafetyCenterIssueActionsInFlight.containsKey(safetyCenterIssueActionId);
     }
 
@@ -116,8 +119,8 @@ final class SafetyCenterInFlightIssueActionRepository {
      */
     @Nullable
     SafetySourceIssue.Action getSafetySourceIssueAction(
-            @NonNull SafetyCenterIssueActionId safetyCenterIssueActionId,
-            @NonNull SafetySourceIssue safetySourceIssue) {
+            SafetyCenterIssueActionId safetyCenterIssueActionId,
+            SafetySourceIssue safetySourceIssue) {
         if (actionIsInFlight(safetyCenterIssueActionId)) {
             return null;
         }
@@ -137,7 +140,7 @@ final class SafetyCenterInFlightIssueActionRepository {
     }
 
     /** Dumps in-flight action data for debugging purposes. */
-    void dump(@NonNull PrintWriter fout) {
+    void dump(PrintWriter fout) {
         int actionInFlightCount = mSafetyCenterIssueActionsInFlight.size();
         fout.println("ACTIONS IN FLIGHT (" + actionInFlightCount + ")");
         for (int i = 0; i < actionInFlightCount; i++) {

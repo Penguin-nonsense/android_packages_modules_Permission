@@ -18,22 +18,24 @@ package com.android.safetycenter;
 
 import static android.os.Build.VERSION_CODES.TIRAMISU;
 
-import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.safetycenter.SafetySourceIssue;
 import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.GuardedBy;
+import com.android.permission.util.UserUtils;
 import com.android.safetycenter.data.SafetyCenterDataManager;
 import com.android.safetycenter.internaldata.SafetyCenterIds;
 import com.android.safetycenter.internaldata.SafetyCenterIssueActionId;
 import com.android.safetycenter.internaldata.SafetyCenterIssueKey;
+import com.android.safetycenter.logging.SafetyCenterStatsdLogger;
 
 /**
  * A Context-registered {@link BroadcastReceiver} that handles intents sent via Safety Center
@@ -63,9 +65,8 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
      * Creates a broadcast {@code PendingIntent} for this receiver which will handle a Safety Center
      * notification being dismissed.
      */
-    @NonNull
     static PendingIntent newNotificationDismissedIntent(
-            @NonNull Context context, @NonNull SafetyCenterIssueKey issueKey) {
+            Context context, SafetyCenterIssueKey issueKey) {
         String issueKeyString = SafetyCenterIds.encodeToString(issueKey);
         Intent intent = new Intent(ACTION_NOTIFICATION_DISMISSED);
         intent.putExtra(EXTRA_ISSUE_KEY, issueKeyString);
@@ -81,9 +82,8 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
      *
      * <p>Safety Center notification actions correspond to Safety Center issue actions.
      */
-    @NonNull
     static PendingIntent newNotificationActionClickedIntent(
-            @NonNull Context context, @NonNull SafetyCenterIssueActionId issueActionId) {
+            Context context, SafetyCenterIssueActionId issueActionId) {
         String issueActionIdString = SafetyCenterIds.encodeToString(issueActionId);
         Intent intent = new Intent(ACTION_NOTIFICATION_ACTION_CLICKED);
         intent.putExtra(EXTRA_ISSUE_ACTION_ID, issueActionIdString);
@@ -94,7 +94,7 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
     }
 
     @Nullable
-    private static SafetyCenterIssueKey getIssueKeyExtra(@NonNull Intent intent) {
+    private static SafetyCenterIssueKey getIssueKeyExtra(Intent intent) {
         String issueKeyString = intent.getStringExtra(EXTRA_ISSUE_KEY);
         if (issueKeyString == null) {
             Log.w(TAG, "Received notification dismissed broadcast with null issue key extra");
@@ -109,7 +109,7 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
     }
 
     @Nullable
-    private static SafetyCenterIssueActionId getIssueActionIdExtra(@NonNull Intent intent) {
+    private static SafetyCenterIssueActionId getIssueActionIdExtra(Intent intent) {
         String issueActionIdString = intent.getStringExtra(EXTRA_ISSUE_ACTION_ID);
         if (issueActionIdString == null) {
             Log.w(TAG, "Received notification action broadcast with null issue action ID");
@@ -123,23 +123,21 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
         }
     }
 
-    @NonNull private final SafetyCenterService mService;
+    private final SafetyCenterService mService;
 
     @GuardedBy("mApiLock")
-    @NonNull
     private final SafetyCenterDataManager mSafetyCenterDataManager;
 
     @GuardedBy("mApiLock")
-    @NonNull
     private final SafetyCenterDataChangeNotifier mSafetyCenterDataChangeNotifier;
 
-    @NonNull private final ApiLock mApiLock;
+    private final ApiLock mApiLock;
 
     SafetyCenterNotificationReceiver(
-            @NonNull SafetyCenterService service,
-            @NonNull SafetyCenterDataManager safetyCenterDataManager,
-            @NonNull SafetyCenterDataChangeNotifier safetyCenterDataChangeNotifier,
-            @NonNull ApiLock apiLock) {
+            SafetyCenterService service,
+            SafetyCenterDataManager safetyCenterDataManager,
+            SafetyCenterDataChangeNotifier safetyCenterDataChangeNotifier,
+            ApiLock apiLock) {
         mService = service;
         mSafetyCenterDataManager = safetyCenterDataManager;
         mSafetyCenterDataChangeNotifier = safetyCenterDataChangeNotifier;
@@ -152,7 +150,7 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
      *
      * @see #newNotificationDismissedIntent(Context, SafetyCenterIssueKey)
      */
-    void register(@NonNull Context context) {
+    void register(Context context) {
         IntentFilter filter = new IntentFilter();
         filter.addAction(ACTION_NOTIFICATION_DISMISSED);
         filter.addAction(ACTION_NOTIFICATION_ACTION_CLICKED);
@@ -160,7 +158,7 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
     }
 
     @Override
-    public void onReceive(@NonNull Context context, @NonNull Intent intent) {
+    public void onReceive(Context context, Intent intent) {
         if (!SafetyCenterFlags.getSafetyCenterEnabled()
                 || !SafetyCenterFlags.getNotificationsEnabled()) {
             return;
@@ -178,7 +176,7 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
                 onNotificationDismissed(context, intent);
                 break;
             case ACTION_NOTIFICATION_ACTION_CLICKED:
-                onNotificationActionClicked(intent);
+                onNotificationActionClicked(context, intent);
                 break;
             default:
                 Log.w(TAG, "Received broadcast with unrecognized action: " + action);
@@ -186,24 +184,64 @@ final class SafetyCenterNotificationReceiver extends BroadcastReceiver {
         }
     }
 
-    private void onNotificationDismissed(@NonNull Context context, @NonNull Intent intent) {
+    private void onNotificationDismissed(Context context, Intent intent) {
         SafetyCenterIssueKey issueKey = getIssueKeyExtra(intent);
         if (issueKey == null) {
             return;
         }
+
         int userId = issueKey.getUserId();
         UserProfileGroup userProfileGroup = UserProfileGroup.from(context, userId);
+        SafetySourceIssue dismissedIssue;
+
         synchronized (mApiLock) {
+            dismissedIssue = mSafetyCenterDataManager.getSafetySourceIssue(issueKey);
             mSafetyCenterDataManager.dismissNotification(issueKey);
             mSafetyCenterDataChangeNotifier.updateDataConsumers(userProfileGroup, userId);
         }
+
+        if (dismissedIssue != null) {
+            SafetyCenterStatsdLogger.writeNotificationDismissedEvent(
+                    issueKey.getSafetySourceId(),
+                    UserUtils.isManagedProfile(userId, context),
+                    dismissedIssue.getIssueTypeId(),
+                    dismissedIssue.getSeverityLevel());
+        }
     }
 
-    private void onNotificationActionClicked(@NonNull Intent intent) {
+    private void onNotificationActionClicked(Context context, Intent intent) {
         SafetyCenterIssueActionId issueActionId = getIssueActionIdExtra(intent);
         if (issueActionId == null) {
             return;
         }
+
         mService.executeIssueActionInternal(issueActionId);
+        logNotificationActionClicked(context, issueActionId);
+    }
+
+    private void logNotificationActionClicked(
+            Context context, SafetyCenterIssueActionId issueActionId) {
+        SafetyCenterIssueKey issueKey = issueActionId.getSafetyCenterIssueKey();
+        SafetySourceIssue issue;
+        synchronized (mApiLock) {
+            issue = mSafetyCenterDataManager.getSafetySourceIssue(issueKey);
+        }
+        if (issue != null) {
+            SafetyCenterStatsdLogger.writeNotificationActionClickedEvent(
+                    issueKey.getSafetySourceId(),
+                    UserUtils.isManagedProfile(issueKey.getUserId(), context),
+                    issue.getIssueTypeId(),
+                    issue.getSeverityLevel(),
+                    isPrimaryAction(issue, issueActionId));
+        }
+    }
+
+    /** Returns {@code true} if {@code actionId} is the first action of {@code issue}. */
+    private boolean isPrimaryAction(SafetySourceIssue issue, SafetyCenterIssueActionId actionId) {
+        return !issue.getActions().isEmpty()
+                && issue.getActions()
+                        .get(0)
+                        .getId()
+                        .equals(actionId.getSafetySourceIssueActionId());
     }
 }

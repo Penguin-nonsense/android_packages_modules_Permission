@@ -24,7 +24,10 @@ import androidx.annotation.RequiresApi
 import androidx.lifecycle.ViewModelProvider
 import androidx.preference.Preference
 import androidx.preference.PreferenceGroup
+import com.android.permissioncontroller.Constants
 import com.android.permissioncontroller.R
+import com.android.permissioncontroller.permission.utils.Utils
+import com.android.permissioncontroller.safetycenter.SafetyCenterConstants.PRIVACY_SOURCES_GROUP_ID
 import com.android.permissioncontroller.safetycenter.ui.SafetyBrandChipPreference.Companion.closeSubpage
 import com.android.permissioncontroller.safetycenter.ui.model.PrivacyControlsViewModel
 import com.android.permissioncontroller.safetycenter.ui.model.PrivacyControlsViewModel.Pref
@@ -42,16 +45,18 @@ class PrivacySubpageFragment : SafetyCenterFragment() {
     private lateinit var subpageGenericEntryGroup: PreferenceGroup
     private lateinit var subpageDataEntryGroup: PreferenceGroup
     private lateinit var privacyControlsViewModel: PrivacyControlsViewModel
+    private var sessionId = Constants.INVALID_SESSION_ID
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         super.onCreatePreferences(savedInstanceState, rootKey)
         setPreferencesFromResource(R.xml.privacy_subpage, rootKey)
+        sessionId = Utils.getOrGenerateSessionId(requireActivity().getIntent())
 
         subpageBrandChip = getPreferenceScreen().findPreference(BRAND_CHIP_KEY)!!
         subpageIssueGroup = getPreferenceScreen().findPreference(ISSUE_GROUP_KEY)!!
         subpageGenericEntryGroup = getPreferenceScreen().findPreference(GENERIC_ENTRY_GROUP_KEY)!!
         subpageDataEntryGroup = getPreferenceScreen().findPreference(DATA_ENTRY_GROUP_KEY)!!
-        subpageBrandChip.setupListener(requireActivity(), requireContext())
+        subpageBrandChip.setupListener(requireActivity(), sessionId)
 
         val factory = PrivacyControlsViewModelFactory(requireActivity().getApplication())
         privacyControlsViewModel =
@@ -60,19 +65,32 @@ class PrivacySubpageFragment : SafetyCenterFragment() {
             prefStates: Map<Pref, PrefState> ->
             renderPrivacyControls(prefStates)
         }
+
+        prerenderCurrentSafetyCenterData()
+    }
+
+    override fun configureInteractionLogger() {
+        val logger = safetyCenterViewModel.interactionLogger
+        logger.sessionId = sessionId
+        logger.navigationSource = NavigationSource.fromIntent(requireActivity().getIntent())
+        logger.viewType = ViewType.SUBPAGE
+        logger.groupId = PRIVACY_SOURCES_GROUP_ID
     }
 
     override fun onResume() {
         super.onResume()
-        safetyCenterViewModel.pageOpen(SOURCE_GROUP_ID)
+        safetyCenterViewModel.pageOpen(PRIVACY_SOURCES_GROUP_ID)
     }
 
     override fun renderSafetyCenterData(uiData: SafetyCenterUiData?) {
         Log.d(TAG, "renderSafetyCenterEntryGroup called with $uiData")
-        val entryGroup = uiData?.getMatchingGroup(SOURCE_GROUP_ID)
+        val entryGroup = uiData?.getMatchingGroup(PRIVACY_SOURCES_GROUP_ID)
         if (entryGroup == null) {
-            Log.w(TAG, "$SOURCE_GROUP_ID doesn't match any of the existing SafetySourcesGroup IDs")
-            closeSubpage(requireActivity(), requireContext())
+            Log.w(
+                TAG,
+                "$PRIVACY_SOURCES_GROUP_ID doesn't match any of the existing SafetySourcesGroup IDs"
+            )
+            closeSubpage(requireActivity(), requireContext(), sessionId)
             return
         }
 
@@ -83,12 +101,10 @@ class PrivacySubpageFragment : SafetyCenterFragment() {
 
     private fun updateSafetyCenterIssues(uiData: SafetyCenterUiData?) {
         subpageIssueGroup.removeAll()
-        val subpageIssues =
-            uiData?.safetyCenterData?.issues?.filter { it.groupId == SOURCE_GROUP_ID }
-        val subpageDismissedIssues =
-            uiData?.safetyCenterData?.dismissedIssues?.filter { it.groupId == SOURCE_GROUP_ID }
+        val subpageIssues = uiData?.getMatchingIssues(PRIVACY_SOURCES_GROUP_ID)
+        val subpageDismissedIssues = uiData?.getMatchingDismissedIssues(PRIVACY_SOURCES_GROUP_ID)
         if (subpageIssues.isNullOrEmpty() && subpageDismissedIssues.isNullOrEmpty()) {
-            Log.w(TAG, "$SOURCE_GROUP_ID doesn't have any matching SafetyCenterIssues")
+            Log.w(TAG, "$PRIVACY_SOURCES_GROUP_ID doesn't have any matching SafetyCenterIssues")
             return
         }
 
@@ -108,6 +124,7 @@ class PrivacySubpageFragment : SafetyCenterFragment() {
         Log.d(TAG, "updateSafetyCenterEntries called with $entryGroup")
         subpageGenericEntryGroup.removeAll()
         subpageDataEntryGroup.removeAll()
+        var atLeastOneDataEntryVisible = false
 
         for (entry in entryGroup.entries) {
             val entryId = entry.id
@@ -121,14 +138,16 @@ class PrivacySubpageFragment : SafetyCenterFragment() {
                         sameTaskSourceIds,
                         requireActivity()
                     ),
-                    entry
+                    entry,
+                    safetyCenterViewModel
                 )
 
             when (sourceId) {
                 "AndroidPermissionUsage",
                 "AndroidPermissionManager",
                 "AndroidAdsPrivacy",
-                "AndroidHealthConnect" -> {
+                "AndroidHealthConnect",
+                "AndroidPrivacyAppDataSharingUpdates" -> {
                     subpageGenericEntryGroup.addPreference(subpageEntry)
                 }
                 "AndroidPrivacyControls" -> {
@@ -137,9 +156,16 @@ class PrivacySubpageFragment : SafetyCenterFragment() {
                 }
                 else -> {
                     subpageDataEntryGroup.addPreference(subpageEntry)
+                    atLeastOneDataEntryVisible =
+                        atLeastOneDataEntryVisible || subpageEntry.isVisible()
                 }
             }
         }
+
+        /* The data entry group currently consists of only two sources which have an initial
+         * display state hidden. So if they are not visible, we should hide the entire category
+         * including the header */
+        subpageDataEntryGroup.setVisible(atLeastOneDataEntryVisible)
     }
 
     private fun renderPrivacyControls(prefStates: Map<Pref, PrefState>) {
@@ -171,6 +197,5 @@ class PrivacySubpageFragment : SafetyCenterFragment() {
         private const val ISSUE_GROUP_KEY: String = "subpage_issue_group"
         private const val GENERIC_ENTRY_GROUP_KEY: String = "subpage_generic_entry_group"
         private const val DATA_ENTRY_GROUP_KEY: String = "subpage_data_entry_group"
-        const val SOURCE_GROUP_ID: String = "AndroidPrivacySources"
     }
 }

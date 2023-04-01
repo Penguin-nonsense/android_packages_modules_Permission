@@ -51,9 +51,9 @@ object SafetyCenterFlags {
     private val notificationsFlag =
         Flag("safety_center_notifications_enabled", defaultValue = false, BooleanParser())
 
-    /*
-     * Flag that determines the minimum delay before Safety Center sends a notification with
-     * {@link android.safetycenter.SafetySourceIssue.NotificationBehavior.NOTIFICATION_BEHAVIOR_DELAYED}.
+    /**
+     * Flag that determines the minimum delay before Safety Center can send a notification for an
+     * issue with [SafetySourceIssue.NOTIFICATION_BEHAVIOR_DELAYED].
      *
      * The actual delay used may be longer.
      */
@@ -77,13 +77,28 @@ object SafetyCenterFlags {
 
     /**
      * Flag containing a comma-delimited list of the issue type IDs for which, if otherwise
-     * undefined, Safety Center should use the "immediate" notification behavior.
+     * undefined, Safety Center should use [SafetySourceIssue.NOTIFICATION_BEHAVIOR_IMMEDIATELY].
      */
     private val immediateNotificationBehaviorIssuesFlag =
         Flag(
             "safety_center_notifications_immediate_behavior_issues",
             defaultValue = emptySet(),
             SetParser(StringParser())
+        )
+
+    /**
+     * Flag for the minimum interval which must elapse before Safety Center can resurface a
+     * notification after it was dismissed. A negative [Duration] (the default) means that dismissed
+     * notifications cannot resurface.
+     *
+     * There may be other conditions for resurfacing a notification and the actual delay may be
+     * longer than this.
+     */
+    private val notificationResurfaceIntervalFlag =
+        Flag(
+            "safety_center_notification_resurface_interval",
+            defaultValue = Duration.ofDays(-1),
+            DurationParser()
         )
 
     /**
@@ -117,6 +132,14 @@ object SafetyCenterFlags {
         Flag(
             "safety_center_resolve_action_timeout_millis",
             defaultValue = TIMEOUT_LONG,
+            DurationParser()
+        )
+
+    /** Flag that determines a duration after which a temporarily hidden issue will resurface. */
+    private val tempHiddenIssueResurfaceDelayFlag =
+        Flag(
+            "safety_center_temp_hidden_issue_resurface_delay_millis",
+            defaultValue = Duration.ofDays(2),
             DurationParser()
         )
 
@@ -194,13 +217,13 @@ object SafetyCenterFlags {
         )
 
     /**
-     * Flag that determines whether statsd logging is allowed in tests.
+     * Flag that determines whether statsd logging is allowed.
      *
      * This is useful to allow testing statsd logs in some specific tests, while keeping the other
      * tests from polluting our statsd logs.
      */
-    private val allowStatsdLoggingInTestsFlag =
-        Flag("safety_center_allow_statsd_logging_in_tests", defaultValue = false, BooleanParser())
+    private val allowStatsdLoggingFlag =
+        Flag("safety_center_allow_statsd_logging", defaultValue = false, BooleanParser())
 
     /**
      * The Package Manager flag used while toggling the QS tile component.
@@ -279,10 +302,12 @@ object SafetyCenterFlags {
             notificationsAllowedSourcesFlag,
             notificationsMinDelayFlag,
             immediateNotificationBehaviorIssuesFlag,
+            notificationResurfaceIntervalFlag,
             showErrorEntriesOnTimeoutFlag,
             replaceLockScreenIconActionFlag,
             refreshSourceTimeoutsFlag,
             resolveActionTimeoutFlag,
+            tempHiddenIssueResurfaceDelayFlag,
             hideResolveUiTransitionDelayFlag,
             untrackedSourcesFlag,
             resurfaceIssueMaxCountsFlag,
@@ -290,7 +315,7 @@ object SafetyCenterFlags {
             issueCategoryAllowlistsFlag,
             allowedAdditionalPackageCertsFlag,
             backgroundRefreshDeniedSourcesFlag,
-            allowStatsdLoggingInTestsFlag,
+            allowStatsdLoggingFlag,
             qsTileComponentSettingFlag,
             showSubpagesFlag,
             overrideRefreshOnPageOpenSourcesFlag,
@@ -320,6 +345,9 @@ object SafetyCenterFlags {
     /** A property that allows getting and setting the [immediateNotificationBehaviorIssuesFlag]. */
     var immediateNotificationBehaviorIssues: Set<String> by immediateNotificationBehaviorIssuesFlag
 
+    /** A property that allows getting and setting the [notificationResurfaceIntervalFlag]. */
+    var notificationResurfaceInterval: Duration by notificationResurfaceIntervalFlag
+
     /** A property that allows getting and setting the [showErrorEntriesOnTimeoutFlag]. */
     var showErrorEntriesOnTimeout: Boolean by showErrorEntriesOnTimeoutFlag
 
@@ -331,6 +359,9 @@ object SafetyCenterFlags {
 
     /** A property that allows getting and setting the [resolveActionTimeoutFlag]. */
     var resolveActionTimeout: Duration by resolveActionTimeoutFlag
+
+    /** A property that allows getting and setting the [tempHiddenIssueResurfaceDelayFlag]. */
+    var tempHiddenIssueResurfaceDelay: Duration by tempHiddenIssueResurfaceDelayFlag
 
     /** A property that allows getting and setting the [hideResolveUiTransitionDelayFlag]. */
     var hideResolvedIssueUiTransitionDelay: Duration by hideResolveUiTransitionDelayFlag
@@ -352,8 +383,8 @@ object SafetyCenterFlags {
     /** A property that allows getting and setting the [backgroundRefreshDeniedSourcesFlag]. */
     var backgroundRefreshDeniedSources: Set<String> by backgroundRefreshDeniedSourcesFlag
 
-    /** A property that allows getting and setting the [allowStatsdLoggingInTestsFlag]. */
-    var allowStatsdLoggingInTests: Boolean by allowStatsdLoggingInTestsFlag
+    /** A property that allows getting and setting the [allowStatsdLoggingFlag]. */
+    var allowStatsdLogging: Boolean by allowStatsdLoggingFlag
 
     /** A property that allows getting and setting the [showSubpagesFlag]. */
     var showSubpages: Boolean by showSubpagesFlag
