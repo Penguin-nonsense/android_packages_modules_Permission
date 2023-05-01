@@ -72,6 +72,8 @@ import androidx.navigation.NavController
 import androidx.preference.Preference
 import androidx.preference.PreferenceGroup
 import com.android.modules.utils.build.SdkLevel
+import com.android.permissioncontroller.DeviceUtils
+import com.android.permissioncontroller.PermissionControllerApplication
 import com.android.permissioncontroller.R
 import com.android.permissioncontroller.permission.data.LightAppPermGroupLiveData
 import com.android.permissioncontroller.permission.data.LightPackageInfoLiveData
@@ -161,6 +163,10 @@ object KotlinUtils {
     /** Whether the safety label changes job should only be run when the device is idle. */
     private const val PROPERTY_SAFETY_LABEL_CHANGES_JOB_RUN_WHEN_IDLE =
         "safety_label_changes_job_run_when_idle"
+
+    /** Whether the kill switch is set for [SafetyLabelChangesJobService]. */
+    private const val PROPERTY_SAFETY_LABEL_CHANGES_JOB_SERVICE_KILL_SWITCH =
+        "safety_label_changes_job_service_kill_switch"
 
     /**
      * Whether the Permissions Hub 2 flag is enabled
@@ -261,8 +267,11 @@ object KotlinUtils {
      */
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
     fun isPhotoPickerPromptEnabled(): Boolean {
-        return SdkLevel.isAtLeastU() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
-            PROPERTY_PHOTO_PICKER_PROMPT_ENABLED, true)
+        val app = PermissionControllerApplication.get()
+        return SdkLevel.isAtLeastU() && !DeviceUtils.isAuto(app) &&
+                !DeviceUtils.isTelevision(app) && !DeviceUtils.isWear(app) &&
+                DeviceConfig.getBoolean(
+                        DeviceConfig.NAMESPACE_PRIVACY, PROPERTY_PHOTO_PICKER_PROMPT_ENABLED, true)
     }
 
     /*
@@ -283,6 +292,16 @@ object KotlinUtils {
     fun isSafetyLabelChangeNotificationsEnabled(): Boolean {
         return SdkLevel.isAtLeastU() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
                 SAFETY_LABEL_CHANGE_NOTIFICATIONS_ENABLED, false)
+    }
+
+    /**
+     * Whether the kill switch is set for [SafetyLabelChangesJobService]. If {@code true}, the
+     * service is effectively disabled and will not run or schedule any jobs.
+     */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, codename = "UpsideDownCake")
+    fun safetyLabelChangesJobServiceKillSwitch(): Boolean {
+        return SdkLevel.isAtLeastU() && DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_PRIVACY,
+            PROPERTY_SAFETY_LABEL_CHANGES_JOB_SERVICE_KILL_SWITCH, false)
     }
 
     /**
@@ -1437,14 +1456,20 @@ object KotlinUtils {
      */
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.TIRAMISU)
     fun shouldShowSafetyProtectionResources(context: Context): Boolean {
-        return SdkLevel.isAtLeastT() &&
-            DeviceConfig.getBoolean(
-                DeviceConfig.NAMESPACE_PRIVACY, SAFETY_PROTECTION_RESOURCES_ENABLED, false) &&
-            context.getResources().getBoolean(
-                Resources.getSystem()
-                    .getIdentifier("config_safetyProtectionEnabled", "bool", "android")) &&
-            context.getDrawable(android.R.drawable.ic_safety_protection) != null &&
-            !context.getString(android.R.string.safety_protection_display_text).isNullOrEmpty()
+        return try {
+            SdkLevel.isAtLeastT() &&
+                DeviceConfig.getBoolean(
+                    DeviceConfig.NAMESPACE_PRIVACY, SAFETY_PROTECTION_RESOURCES_ENABLED, false) &&
+                context.getResources().getBoolean(
+                    Resources.getSystem()
+                        .getIdentifier("config_safetyProtectionEnabled", "bool", "android")) &&
+                context.getDrawable(android.R.drawable.ic_safety_protection) != null &&
+                !context.getString(android.R.string.safety_protection_display_text).isNullOrEmpty()
+        } catch (e: Resources.NotFoundException) {
+            // We should expect the resources to not exist for non-pixel devices
+            // (except for the OEMs that opt-in)
+            false
+        }
     }
 
     fun addHealthPermissions(context: Context) {

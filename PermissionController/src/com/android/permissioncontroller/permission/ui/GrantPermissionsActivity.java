@@ -30,6 +30,7 @@ import static com.android.permissioncontroller.permission.ui.GrantPermissionsVie
 import static com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler.GRANTED_FOREGROUND_ONLY;
 import static com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler.GRANTED_ONE_TIME;
 import static com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler.GRANTED_USER_SELECTED;
+import static com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler.LINKED_TO_PERMISSION_RATIONALE;
 import static com.android.permissioncontroller.permission.ui.GrantPermissionsViewHandler.LINKED_TO_SETTINGS;
 import static com.android.permissioncontroller.permission.ui.model.GrantPermissionsViewModel.APP_PERMISSION_REQUEST_CODE;
 import static com.android.permissioncontroller.permission.ui.model.GrantPermissionsViewModel.PHOTO_PICKER_REQUEST_CODE;
@@ -97,7 +98,7 @@ public class GrantPermissionsActivity extends SettingsActivity
             + "_REQUEST_ID";
     public static final String ANNOTATION_ID = "link";
 
-    public static final int NEXT_BUTTON = 16;
+    public static final int NEXT_BUTTON = 15;
     public static final int ALLOW_BUTTON = 0;
     public static final int ALLOW_ALWAYS_BUTTON = 1; // Used in auto
     public static final int ALLOW_FOREGROUND_BUTTON = 2;
@@ -111,13 +112,9 @@ public class GrantPermissionsActivity extends SettingsActivity
     public static final int LINK_TO_SETTINGS = 10;
     public static final int ALLOW_ALL_BUTTON = 11; // button for options with a picker, allow all
     public static final int ALLOW_SELECTED_BUTTON = 12; // allow selected, with picker
-    // button to add more after a user has used the picker once
-    public static final int ALLOW_MORE_SELECTED_BUTTON = 13;
     // button to cancel a request for more data with a picker
-    public static final int DONT_ALLOW_MORE_SELECTED_BUTTON = 14;
-    // after the user has used the picker, the allow all button shows below all other buttons, with
-    // a different style.
-    public static final int ALLOW_ALL_SINGLETON_BUTTON = 15;
+    public static final int DONT_ALLOW_MORE_SELECTED_BUTTON = 13;
+    public static final int LINK_TO_PERMISSION_RATIONALE = 14;
 
     public static final int NEXT_LOCATION_DIALOG = 6;
     public static final int LOCATION_ACCURACY_LAYOUT = 0;
@@ -166,6 +163,8 @@ public class GrantPermissionsActivity extends SettingsActivity
     private List<GrantPermissionsActivity> mFollowerActivities = new ArrayList<>();
     /** Whether this activity has asked another GrantPermissionsActivity to show on its behalf */
     private boolean mDelegated;
+    /** Whether this activity has been triggered by the system */
+    private boolean mIsSystemTriggered = false;
     /** The set result code, or MAX_VALUE if it hasn't been set yet */
     private int mResultCode = Integer.MAX_VALUE;
     /** Package that shall have permissions granted */
@@ -194,6 +193,7 @@ public class GrantPermissionsActivity extends SettingsActivity
 
         int permissionsSdkLevel;
         if (PackageManager.ACTION_REQUEST_PERMISSIONS_FOR_OTHER.equals(getIntent().getAction())) {
+            mIsSystemTriggered = true;
             mTargetPackage = getIntent().getStringExtra(Intent.EXTRA_PACKAGE_NAME);
             if (mTargetPackage == null) {
                 Log.e(LOG_TAG, "null EXTRA_PACKAGE_NAME. Must be set for "
@@ -244,16 +244,17 @@ public class GrantPermissionsActivity extends SettingsActivity
             if (!sCurrentGrantRequests.containsKey(mKey)) {
                 sCurrentGrantRequests.put(mKey, this);
                 finishSystemStartedDialogsOnOtherTasksLocked();
-            } else if (getCallingPackage() == null) {
-                // The trampoline doesn't require results. Delegate, and finish.
+            } else if (mIsSystemTriggered) {
+                // The system triggered dialog doesn't require results. Delegate, and finish.
                 sCurrentGrantRequests.get(mKey).onNewFollowerActivity(null,
                         mRequestedPermissions);
                 finishAfterTransition();
                 return;
-            } else {
+            } else if (sCurrentGrantRequests.get(mKey).mIsSystemTriggered) {
+                // Normal permission requests should only merge into the system triggered dialog,
+                // which has task overlay set
                 mDelegated = true;
-                sCurrentGrantRequests.get(mKey).onNewFollowerActivity(this,
-                        mRequestedPermissions);
+                sCurrentGrantRequests.get(mKey).onNewFollowerActivity(this, mRequestedPermissions);
             }
         }
 
@@ -514,14 +515,6 @@ public class GrantPermissionsActivity extends SettingsActivity
             setTitle(message);
         }
 
-        CharSequence permissionRationaleMessage = null;
-        if (info.getShowPermissionRationale()) {
-            permissionRationaleMessage =
-                    getString(
-                            getPermissionRationaleMessageResIdForPermissionGroup(
-                                    info.getGroupName()));
-        }
-
         ArrayList<Integer> idxs = new ArrayList<>();
         mButtonVisibilities = new boolean[info.getButtonVisibilities().size()];
         for (int i = 0; i < info.getButtonVisibilities().size(); i++) {
@@ -529,6 +522,14 @@ public class GrantPermissionsActivity extends SettingsActivity
             if (mButtonVisibilities[i]) {
                 idxs.add(i);
             }
+        }
+
+        CharSequence permissionRationaleMessage = null;
+        if (isPermissionRationaleVisible()) {
+            permissionRationaleMessage =
+                getString(
+                    getPermissionRationaleMessageResIdForPermissionGroup(
+                        info.getGroupName()));
         }
 
         boolean[] locationVisibilities = new boolean[info.getLocationVisibilities().size()];
@@ -651,6 +652,9 @@ public class GrantPermissionsActivity extends SettingsActivity
 
     @Override
     public void onPermissionRationaleClicked(String groupName) {
+        logGrantPermissionActivityButtons(groupName,
+                /* affectedForegroundPermissions= */ null,
+                LINKED_TO_PERMISSION_RATIONALE);
         mViewModel.showPermissionRationaleActivity(this, groupName);
     }
 
@@ -814,6 +818,10 @@ public class GrantPermissionsActivity extends SettingsActivity
                 break;
             case LINKED_TO_SETTINGS:
                 clickedButton = 1 << LINK_TO_SETTINGS;
+                break;
+            case LINKED_TO_PERMISSION_RATIONALE:
+                clickedButton = 1 << LINK_TO_PERMISSION_RATIONALE;
+                break;
             case CANCELED:
                 // fall through
             default:
@@ -830,7 +838,7 @@ public class GrantPermissionsActivity extends SettingsActivity
         }
 
         mViewModel.logClickedButtons(permissionGroupName, selectedPrecision, clickedButton,
-                presentedButtons);
+                presentedButtons, isPermissionRationaleVisible());
     }
 
     private int getButtonState() {
@@ -847,6 +855,10 @@ public class GrantPermissionsActivity extends SettingsActivity
         return buttonState;
     }
 
+    private boolean isPermissionRationaleVisible() {
+        return mButtonVisibilities != null && mButtonVisibilities[LINK_TO_PERMISSION_RATIONALE];
+    }
+
     private boolean isResultSet() {
         return mResultCode != Integer.MAX_VALUE;
     }
@@ -860,9 +872,7 @@ public class GrantPermissionsActivity extends SettingsActivity
         for (Pair<String, Integer> key : sCurrentGrantRequests.keySet()) {
             if (key.first.equals(mTargetPackage) && key.second != getTaskId()) {
                 GrantPermissionsActivity other = sCurrentGrantRequests.get(key);
-                if (other.getIntent().getAction()
-                        .equals(PackageManager.ACTION_REQUEST_PERMISSIONS_FOR_OTHER)
-                        && other.mFollowerActivities.isEmpty()) {
+                if (other.mIsSystemTriggered && other.mFollowerActivities.isEmpty()) {
                     other.finish();
                 }
             }
