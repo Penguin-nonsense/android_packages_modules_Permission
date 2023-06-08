@@ -498,8 +498,8 @@
     <string name="permgroupupgraderequest_sensors" msgid="7576527638411370468">"ആപ്പ് ഉപയോഗിക്കുമ്പോഴും ബോഡി സെൻസർ ഡാറ്റ ആക്‌സസ് ചെയ്യാൻ &lt;b&gt;<xliff:g id="APP_NAME">%1$s</xliff:g>&lt;/b&gt; എന്നതിനെ അനുവദിക്കുന്നത് തുടരണോ?"</string>
     <string name="permgrouprequest_notifications" msgid="6396739062335106181">"നിങ്ങൾക്ക് അറിയിപ്പുകൾ അയയ്ക്കാൻ &lt;b&gt;<xliff:g id="APP_NAME">%1$s</xliff:g>&lt;/b&gt; എന്നതിനെ അനുവദിക്കണോ?"</string>
     <string name="auto_granted_permissions" msgid="6009452264824455892">"നിയന്ത്രിത അനുമതികൾ"</string>
-    <string name="auto_granted_location_permission_notification_title" msgid="1438871159268985993">"ലൊക്കേഷൻ ആക്‌സസ് ചെയ്യാൻ കഴിയും"</string>
-    <string name="auto_granted_permission_notification_body" msgid="6919835973190443695">"നിങ്ങളുടെ ലൊക്കേഷൻ ആക്‌സസ് ചെയ്യാൻ നിങ്ങളുടെ ഐടി അഡ്‌മിൻ <xliff:g id="APP_NAME">%s</xliff:g> എന്നതിനെ അനുവദിക്കുന്നു"</string>
+    <string name="auto_granted_location_permission_notification_title" msgid="7570818224669050377">"<xliff:g id="APP_NAME">%1$s</xliff:g> എന്നതിന് ലൊക്കേഷൻ ആക്‌സസ് ഉണ്ട്"</string>
+    <string name="auto_granted_permission_notification_body" msgid="5040234389205471318">"നിങ്ങളുടെ ലൊക്കേഷൻ ആക്‌സസ് ചെയ്യാൻ നിങ്ങളുടെ സ്ഥാപനം <xliff:g id="APP_NAME">%1$s</xliff:g> എന്നതിനെ അനുവദിക്കുന്നു"</string>
     <string name="other_permissions_label" msgid="8986184335503271992">"മറ്റ് അനുമതികൾ"</string>
     <string name="not_used_permissions_label" msgid="3939839426115141264">"സിസ്‌റ്റം ഉപയോഗിക്കുന്ന അനുമതി"</string>
     <string name="not_used_permissions_description" msgid="7595514824169388718">"സിസ്‌റ്റം ആപ്പുകൾ മാത്രം ഉപയോഗിക്കുന്ന അനുമതികൾ."</string>
@@ -589,6 +589,7 @@
     <string name="permission_rationale_message_location" msgid="2153841534298068414">"മൂന്നാം കക്ഷികളുമായി ലൊക്കേഷൻ ഡാറ്റ പങ്കിട്ടേക്കാമെന്ന് ഈ ആപ്പ് പ്രസ്താവിക്കുന്നു"</string>
     <string name="permission_rationale_location_title" msgid="2404797182678793506">"ഡാറ്റ പങ്കിടലും ലൊക്കേഷനും"</string>
     <string name="permission_rationale_data_sharing_source_title" msgid="6874604543125814316">"ഡാറ്റ പങ്കിടുന്നതിനെ കുറിച്ചുള്ള വിവരങ്ങൾ ലഭിക്കുന്നത് എവിടെ നിന്നാണ്"</string>
+    <string name="permission_rationale_data_sharing_device_manufacturer_message" msgid="7569261218145653185">"ഈ ആപ്പ് എങ്ങനെയാണ് ഡാറ്റ പങ്കിടുന്നത് എന്നതിനെ കുറിച്ചുള്ള വിവരങ്ങൾ ഡെവലപ്പർ ഈ ഉപകരണത്തിന്റെ നിർമ്മാതാവിന് നൽകിയിട്ടുണ്ട്. കാലക്രമേണ ഡെവലപ്പർ ഈ വിവരങ്ങൾ അപ്ഡേറ്റ് ചെയ്തേക്കാം."</string>
     <string name="permission_rationale_data_sharing_source_message" msgid="8330794595417986883">"ഈ ആപ്പ് എങ്ങനെയാണ് ഡാറ്റ പങ്കിടുന്നത് എന്നതിനെ കുറിച്ച് ഡെവലപ്പർ "<annotation id="link"><annotation id="install_source" example="App Store">"%1$s"</annotation></annotation>" എന്നതിൽ വിവരങ്ങൾ നൽകിയിട്ടുണ്ട്. കാലക്രമേണ ഡെവലപ്പർ ഈ വിവരങ്ങൾ അപ്ഡേറ്റ് ചെയ്തേക്കാം."</string>
     <string name="permission_rationale_location_purpose_title" msgid="5115877143670012618">"ഇവയ്ക്ക് ഈ ആപ്പ് ലൊക്കേഷൻ ഡാറ്റ പങ്കിട്ടേക്കാം:"</string>
     <string name="permission_rationale_permission_data_sharing_varies_title" msgid="9103718980919908316">"ഡാറ്റ പങ്കിടുന്നത് വ്യത്യാസപ്പെടുന്നു"</string>

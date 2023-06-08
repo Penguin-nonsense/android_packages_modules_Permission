@@ -136,7 +136,7 @@ public class IssueCardPreference extends Preference implements ComparablePrefere
 
         mSafetyCenterViewModel
                 .getInteractionLogger()
-                .recordForIssue(Action.SAFETY_ISSUE_VIEWED, mIssue, mIsDismissed);
+                .recordIssueViewed(mIssue, mIsDismissed);
     }
 
     private void maybeDisplayText(@Nullable CharSequence maybeText, TextView textView) {
@@ -462,7 +462,7 @@ public class IssueCardPreference extends Preference implements ComparablePrefere
 
         public void buildAndAddToView(LinearLayout buttonList) {
             MaterialButton button = new MaterialButton(mContextThemeWrapper, null, getStyle());
-            if (SdkLevel.isAtLeastU()) {
+            if (SdkLevel.isAtLeastU() && !mIsLargeScreen) {
                 configureGroupStyleCorners(button);
             }
             setButtonColors(button);

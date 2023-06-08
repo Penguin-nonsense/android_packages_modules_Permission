@@ -246,12 +246,12 @@
     <string name="app_permission_never_accessed_summary" msgid="401346181461975090">"No ha accedido nunca"</string>
     <string name="app_permission_never_accessed_denied_summary" msgid="6596000497490905146">"Denegado / Último acceso: Nunca"</string>
     <string name="allowed_header" msgid="7769277978004790414">"Permitido"</string>
-    <string name="allowed_always_header" msgid="6455903312589013545">"Permitido siempre"</string>
+    <string name="allowed_always_header" msgid="6455903312589013545">"Permitidas siempre"</string>
     <string name="allowed_foreground_header" msgid="6845655788447833353">"Permitidas solo mientras se usan"</string>
     <string name="allowed_storage_scoped" msgid="5383645873719086975">"Pueden acceder solo al contenido multimedia"</string>
     <string name="allowed_storage_full" msgid="5356699280625693530">"Pueden gestionar todos los archivos"</string>
     <string name="ask_header" msgid="2633816846459944376">"Preguntar siempre"</string>
-    <string name="denied_header" msgid="903209608358177654">"No permitido"</string>
+    <string name="denied_header" msgid="903209608358177654">"No permitidas"</string>
     <string name="storage_footer_hyperlink_text" msgid="8873343987957834810">"Ver más aplicaciones que pueden acceder a todos los archivos"</string>
     <string name="days" msgid="609563020985571393">"{count,plural, =1{1 día}many{# días}other{# días}}"</string>
     <string name="hours" msgid="7302866489666950038">"{count,plural, =1{# hora}many{# horas}other{# horas}}"</string>
@@ -385,7 +385,7 @@
     <string name="role_call_redirection_request_title" msgid="2816244455003562925">"¿Quieres establecer a <xliff:g id="APP_NAME">%1$s</xliff:g> como tu aplicación de redirección de llamadas predeterminada?"</string>
     <string name="role_call_redirection_request_description" msgid="3118895714178527164">"No se necesita ningún permiso"</string>
     <string name="role_call_screening_label" msgid="883935222060878724">"Aplicación de filtro de identificación de llamada y spam"</string>
-    <string name="role_call_screening_short_label" msgid="2048465565063130834">"Aplicación de identificación de llamada y filtro de spam"</string>
+    <string name="role_call_screening_short_label" msgid="2048465565063130834">"Aplicación de identificación de llamadas y filtro de spam"</string>
     <string name="role_call_screening_description" msgid="2349431420497468981">"Aplicaciones que te permiten identificar llamadas y bloquear spam, llamadas automatizadas o números no deseados"</string>
     <string name="role_call_screening_request_title" msgid="7358309224566977290">"¿Quieres establecer a <xliff:g id="APP_NAME">%1$s</xliff:g> como tu aplicación predeterminada de filtro de identificación de llamada y spam?"</string>
     <string name="role_call_screening_request_description" msgid="7338511921032446006">"No se necesita ningún permiso"</string>
@@ -397,7 +397,7 @@
     <string name="role_watch_description" msgid="267003778693177779">"<xliff:g id="APP_NAME">%1$s</xliff:g> podrá interactuar con tus notificaciones y acceder a tu teléfono, SMS, contactos y calendario."</string>
     <string name="role_app_streaming_description" msgid="7341638576226183992">"<xliff:g id="APP_NAME">%1$s</xliff:g> podrá interactuar con tus notificaciones y reproducir tus aplicaciones en el dispositivo conectado."</string>
     <string name="role_companion_device_computer_description" msgid="416099879217066377">"Este servicio comparte las fotos, el contenido multimedia y las notificaciones de tu teléfono con otros dispositivos."</string>
-    <string name="role_notes_label" msgid="7451627001058089536">"App de notas predeterminada"</string>
+    <string name="role_notes_label" msgid="7451627001058089536">"Aplicación de notas predeterminada"</string>
     <string name="role_notes_short_label" msgid="8796604147546125285">"Aplicación de notas"</string>
     <string name="role_notes_description" msgid="8496852798616883551">"Aplicaciones que te permiten tomar notas en tu dispositivo"</string>
     <string name="role_notes_search_keywords" msgid="7710756695666744631">"notas"</string>
@@ -498,8 +498,8 @@
     <string name="permgroupupgraderequest_sensors" msgid="7576527638411370468">"¿Seguir permitiendo que &lt;b&gt;<xliff:g id="APP_NAME">%1$s</xliff:g>&lt;/b&gt; acceda a los datos de los sensores corporales mientras se usa?"</string>
     <string name="permgrouprequest_notifications" msgid="6396739062335106181">"¿Permitir que &lt;b&gt;<xliff:g id="APP_NAME">%1$s</xliff:g>&lt;/b&gt; te envíe notificaciones?"</string>
     <string name="auto_granted_permissions" msgid="6009452264824455892">"Permisos controlados"</string>
-    <string name="auto_granted_location_permission_notification_title" msgid="1438871159268985993">"Se puede acceder a tu ubicación"</string>
-    <string name="auto_granted_permission_notification_body" msgid="6919835973190443695">"Tu administrador de TI permite que <xliff:g id="APP_NAME">%s</xliff:g> acceda a tu ubicación"</string>
+    <string name="auto_granted_location_permission_notification_title" msgid="7570818224669050377">"<xliff:g id="APP_NAME">%1$s</xliff:g> tiene acceso a la ubicación"</string>
+    <string name="auto_granted_permission_notification_body" msgid="5040234389205471318">"Tu organización permite que <xliff:g id="APP_NAME">%1$s</xliff:g> acceda a tu ubicación"</string>
     <string name="other_permissions_label" msgid="8986184335503271992">"Otros permisos"</string>
     <string name="not_used_permissions_label" msgid="3939839426115141264">"Permiso usado por el sistema"</string>
     <string name="not_used_permissions_description" msgid="7595514824169388718">"Permisos usados solo por las aplicaciones del sistema."</string>
@@ -589,6 +589,7 @@
     <string name="permission_rationale_message_location" msgid="2153841534298068414">"Esta aplicación ha indicado que puede compartir datos de ubicación con terceros"</string>
     <string name="permission_rationale_location_title" msgid="2404797182678793506">"Datos compartidos y ubicación"</string>
     <string name="permission_rationale_data_sharing_source_title" msgid="6874604543125814316">"De dónde procede la información sobre cómo se comparten los datos"</string>
+    <string name="permission_rationale_data_sharing_device_manufacturer_message" msgid="7569261218145653185">"El desarrollador ha proporcionado información al fabricante de este dispositivo sobre cómo comparte datos esta aplicación. Es posible que el desarrollador actualice esta información con el tiempo."</string>
     <string name="permission_rationale_data_sharing_source_message" msgid="8330794595417986883">"El desarrollador ha proporcionado información a "<annotation id="link"><annotation id="install_source" example="App Store">"%1$s"</annotation></annotation>" sobre cómo comparte datos esta aplicación. Es posible que el desarrollador actualice esta información con el tiempo."</string>
     <string name="permission_rationale_location_purpose_title" msgid="5115877143670012618">"Esta app puede compartir datos de ubicación para:"</string>
     <string name="permission_rationale_permission_data_sharing_varies_title" msgid="9103718980919908316">"La forma de compartir datos varía"</string>

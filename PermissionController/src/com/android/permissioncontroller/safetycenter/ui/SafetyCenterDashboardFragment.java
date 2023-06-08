@@ -41,12 +41,14 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
+import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceGroup;
 
 import com.android.permissioncontroller.R;
 import com.android.permissioncontroller.safetycenter.ui.model.SafetyCenterUiData;
 import com.android.permissioncontroller.safetycenter.ui.model.StatusUiData;
+import com.android.safetycenter.internaldata.SafetyCenterBundles;
 import com.android.safetycenter.resources.SafetyCenterResourcesContext;
 
 import kotlin.Unit;
@@ -64,6 +66,7 @@ public final class SafetyCenterDashboardFragment extends SafetyCenterFragment {
     private static final String ISSUES_GROUP_KEY = "issues_group";
     private static final String ENTRIES_GROUP_KEY = "entries_group";
     private static final String STATIC_ENTRIES_GROUP_KEY = "static_entries_group";
+    private static final String SPACER_KEY = "spacer";
 
     private SafetyStatusPreference mSafetyStatusPreference;
     private final CollapsableGroupCardHelper mCollapsableGroupCardHelper =
@@ -115,6 +118,8 @@ public final class SafetyCenterDashboardFragment extends SafetyCenterFragment {
             mEntriesGroup = null;
             getPreferenceScreen().removePreference(mStaticEntriesGroup);
             mStaticEntriesGroup = null;
+            Preference spacerPreference = getPreferenceScreen().findPreference(SPACER_KEY);
+            getPreferenceScreen().removePreference(spacerPreference);
         }
         getSafetyCenterViewModel().getStatusUiLiveData().observe(this, this::updateStatus);
 
@@ -188,7 +193,7 @@ public final class SafetyCenterDashboardFragment extends SafetyCenterFragment {
 
         if (!mIsQuickSettingsFragment) {
             updateSafetyEntries(context, data.getEntriesOrGroups());
-            updateStaticSafetyEntries(context, data.getStaticEntryGroups());
+            updateStaticSafetyEntries(context, data);
         }
     }
 
@@ -273,11 +278,10 @@ public final class SafetyCenterDashboardFragment extends SafetyCenterFragment {
                         }));
     }
 
-    private void updateStaticSafetyEntries(
-            Context context, List<SafetyCenterStaticEntryGroup> staticEntryGroups) {
+    private void updateStaticSafetyEntries(Context context, SafetyCenterData data) {
         mStaticEntriesGroup.removeAll();
 
-        for (SafetyCenterStaticEntryGroup group : staticEntryGroups) {
+        for (SafetyCenterStaticEntryGroup group : data.getStaticEntryGroups()) {
             PreferenceCategory category = new ComparablePreferenceCategory(context);
             category.setTitle(group.getTitle());
             mStaticEntriesGroup.addPreference(category);
@@ -288,6 +292,7 @@ public final class SafetyCenterDashboardFragment extends SafetyCenterFragment {
                                 context,
                                 requireActivity().getTaskId(),
                                 entry,
+                                SafetyCenterBundles.getStaticEntryId(data, entry),
                                 getSafetyCenterViewModel()));
             }
         }

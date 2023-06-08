@@ -498,8 +498,8 @@
     <string name="permgroupupgraderequest_sensors" msgid="7576527638411370468">"បន្តអនុញ្ញាតឱ្យ &lt;b&gt;<xliff:g id="APP_NAME">%1$s</xliff:g>&lt;/b&gt; ចូលប្រើទិន្នន័យឧបករណ៍ចាប់សញ្ញារាងកាយ ខណៈពេលកំពុងប្រើកម្មវិធីឬ?"</string>
     <string name="permgrouprequest_notifications" msgid="6396739062335106181">"អនុញ្ញាតឱ្យ &lt;b&gt;<xliff:g id="APP_NAME">%1$s</xliff:g>&lt;/b&gt; ផ្ញើ​ការជូនដំណឹង​ឱ្យអ្នកឬ?"</string>
     <string name="auto_granted_permissions" msgid="6009452264824455892">"ការអនុញ្ញាត​ដែលស្ថិតក្រោម​ការគ្រប់គ្រង"</string>
-    <string name="auto_granted_location_permission_notification_title" msgid="1438871159268985993">"អាចចូលប្រើទីតាំងបាន"</string>
-    <string name="auto_granted_permission_notification_body" msgid="6919835973190443695">"អ្នកគ្រប់គ្រងផ្នែកព័ត៌មានវិទ្យារបស់អ្នកកំពុងអនុញ្ញាតឱ្យ <xliff:g id="APP_NAME">%s</xliff:g> ចូលប្រើទីតាំងរបស់អ្នក"</string>
+    <string name="auto_granted_location_permission_notification_title" msgid="7570818224669050377">"<xliff:g id="APP_NAME">%1$s</xliff:g> មានសិទ្ធិចូលប្រើទីតាំង"</string>
+    <string name="auto_granted_permission_notification_body" msgid="5040234389205471318">"ស្ថាប័នរបស់អ្នកអនុញ្ញាតឱ្យ <xliff:g id="APP_NAME">%1$s</xliff:g> ចូលប្រើទីតាំងរបស់អ្នក"</string>
     <string name="other_permissions_label" msgid="8986184335503271992">"ការអនុញ្ញាត​ផ្សេងទៀត"</string>
     <string name="not_used_permissions_label" msgid="3939839426115141264">"ការអនុញ្ញាត​ដែលត្រូវបានប្រើដោយ​ប្រព័ន្ធ"</string>
     <string name="not_used_permissions_description" msgid="7595514824169388718">"ការអនុញ្ញាត​ដែលត្រូវបានប្រើ​ដោយកម្មវិធីប្រព័ន្ធ​តែប៉ុណ្ណោះ។"</string>
@@ -589,6 +589,7 @@
     <string name="permission_rationale_message_location" msgid="2153841534298068414">"កម្មវិធីនេះបានបញ្ជាក់ថា វាអាចចែករំលែកទិន្នន័យទីតាំងជាមួយភាគីទីបី"</string>
     <string name="permission_rationale_location_title" msgid="2404797182678793506">"ការចែករំលែកទិន្នន័យ និងទីតាំង"</string>
     <string name="permission_rationale_data_sharing_source_title" msgid="6874604543125814316">"កន្លែងដែលព័ត៌មាន​អំពីការចែករំលែក​ទិន្នន័យបានមកពី"</string>
+    <string name="permission_rationale_data_sharing_device_manufacturer_message" msgid="7569261218145653185">"អ្នកអភិវឌ្ឍន៍បានផ្ដល់ព័ត៌មាន​ដល់ក្រុមហ៊ុនផលិតឧបករណ៍នេះ​អំពីរបៀបដែលកម្មវិធីនេះ​ចែករំលែកទិន្នន័យ។ អ្នក​អភិវឌ្ឍន៍អាចនឹងធ្វើបច្ចុប្បន្នភាព​ព័ត៌មាននេះ​ទៅតាមពេលវេលា។"</string>
     <string name="permission_rationale_data_sharing_source_message" msgid="8330794595417986883">"អ្នកអភិវឌ្ឍន៍​បានផ្ដល់ព័ត៌មានដល់ "<annotation id="link"><annotation id="install_source" example="App Store">"%1$s"</annotation></annotation>" អំពីរបៀបដែល​កម្មវិធីនេះ​ចែករំលែកទិន្នន័យ។ អ្នក​អភិវឌ្ឍន៍អាចនឹងធ្វើបច្ចុប្បន្នភាព​ព័ត៌មាននេះ​ទៅតាមពេលវេលា។"</string>
     <string name="permission_rationale_location_purpose_title" msgid="5115877143670012618">"កម្មវិធីនេះ​អាចនឹងចែករំលែក​ទិន្នន័យទីតាំងសម្រាប់៖"</string>
     <string name="permission_rationale_permission_data_sharing_varies_title" msgid="9103718980919908316">"ភាពខុសគ្នានៃ​ការចែករំលែកទិន្នន័យ"</string>

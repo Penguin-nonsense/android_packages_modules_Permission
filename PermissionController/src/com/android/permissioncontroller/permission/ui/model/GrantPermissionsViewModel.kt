@@ -39,6 +39,7 @@ import android.health.connect.HealthPermissions.HEALTH_PERMISSION_GROUP
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.UserManager
 import android.permission.PermissionManager
 import android.provider.MediaStore
 import android.util.Log
@@ -72,7 +73,7 @@ import com.android.permissioncontroller.auto.DrivingDecisionReminderService
 import com.android.permissioncontroller.permission.data.LightAppPermGroupLiveData
 import com.android.permissioncontroller.permission.data.LightPackageInfoLiveData
 import com.android.permissioncontroller.permission.data.PackagePermissionsLiveData
-import com.android.permissioncontroller.permission.data.SafetyLabelInfoLiveData
+import com.android.permissioncontroller.permission.data.v34.SafetyLabelInfoLiveData
 import com.android.permissioncontroller.permission.data.SmartUpdateMediatorLiveData
 import com.android.permissioncontroller.permission.data.get
 import com.android.permissioncontroller.permission.model.AppPermissionGroup
@@ -154,7 +155,7 @@ class GrantPermissionsViewModel(
     private val user = Process.myUserHandle()
     private val packageInfoLiveData = LightPackageInfoLiveData[packageName, user]
     private val safetyLabelInfoLiveData =
-        if (requestedPermissions
+        if (SdkLevel.isAtLeastU() && requestedPermissions
                 .mapNotNull { PermissionMapping.getGroupOfPlatformPermission(it) }
                 .any { PermissionMapping.isSafetyLabelAwarePermissionGroup(it) }) {
             SafetyLabelInfoLiveData[packageName, user]
@@ -303,9 +304,8 @@ class GrantPermissionsViewModel(
                             appPermGroup.permissions[perm]?.isGrantedIncludingAppOp == true &&
                                 appPermGroup.permissions[perm]?.isRevokeWhenRequested == false
                         }
-                        if (allAffectedGranted || isCompatStorageGrant(appPermGroup)) {
-                            groupStates[key] = GroupState(appPermGroup, state.isBackground,
-                                    state.affectedPermissions, STATE_ALLOWED)
+                        if (allAffectedGranted) {
+                            groupStates[key]!!.state = STATE_ALLOWED
                         }
                     }
                 } else {
@@ -815,11 +815,6 @@ class GrantPermissionsViewModel(
                 // then skip the request
                 return STATE_SKIPPED
             }
-            // If the "false grant" for apps that don't support the permission has been applied,
-            // treat the permission as already granted
-            if (isCompatStorageGrant(group)) {
-                return STATE_ALLOWED
-            }
         }
 
         val isBackground = perm in group.backgroundPermNames
@@ -892,7 +887,7 @@ class GrantPermissionsViewModel(
      * ACCESS_MEDIA_LOCATION granted
      */
     private fun isPartialStorageGrant(group: LightAppPermGroup): Boolean {
-        if (group.permGroupName != READ_MEDIA_VISUAL || !KotlinUtils.isPhotoPickerPromptEnabled()) {
+        if (!KotlinUtils.isPhotoPickerPromptEnabled() || group.permGroupName != READ_MEDIA_VISUAL) {
             return false
         }
 
@@ -900,20 +895,6 @@ class GrantPermissionsViewModel(
         return group.isGranted && group.permissions.values.all {
             it.name in partialPerms || (it.name !in partialPerms && !it.isGrantedIncludingAppOp)
         }
-    }
-
-    /**
-     * A compat storage grant is provided when the user selects "select photos" on an app that does
-     * not explicitly request the READ_MEDIA_VISUAL_USER_SELECTED permission. It grants RMVUS, and
-     * applies the "revoked compat" state to all other permissions in the group.
-     */
-    private fun isCompatStorageGrant(group: LightAppPermGroup): Boolean {
-        if (group.permGroupName != READ_MEDIA_VISUAL || !KotlinUtils.isPhotoPickerPromptEnabled()) {
-            return false
-        }
-        return group.permissions[READ_MEDIA_VISUAL_USER_SELECTED]
-                ?.isGrantedIncludingAppOp == true &&
-                group.permissions.values.any { it.isCompatRevoked }
     }
 
     private fun getStateFromPolicy(perm: String, group: LightAppPermGroup): Int {
@@ -1094,8 +1075,6 @@ class GrantPermissionsViewModel(
                 listOf(READ_MEDIA_VISUAL_USER_SELECTED))
             grantForegroundRuntimePermissions(app, groupState.group,
                 nonSelectedPerms, isOneTime = true, userFixed = false, withoutAppOps = true)
-            onPermissionGrantResultSingleState(groupState, listOf(READ_MEDIA_VISUAL_USER_SELECTED),
-                granted = true, isOneTime = false, doNotAskAgain = false)
             val appPermGroup = AppPermissionGroup.create(app, packageName,
             groupState.group.permGroupName, groupState.group.userHandle, false)
             appPermGroup.setSelfRevoked()
@@ -1366,13 +1345,20 @@ class GrantPermissionsViewModel(
             } else {
                 onPermissionGrantResult(READ_MEDIA_VISUAL, null, CANCELED)
             }
-            logPhotoPickerInteraction(result)
             requestInfosLiveData.update()
         }
-        activity.startActivityForResult(Intent(MediaStore.ACTION_USER_SELECT_IMAGES_FOR_APP)
+        // A clone profile doesn't have a MediaProvider. If this user is a clone profile, open
+        // the photo picker in the parent profile
+        val userManager = activity.getSystemService(UserManager::class.java)!!
+        val user = if (userManager.isCloneProfile) {
+            userManager.getProfileParent(Process.myUserHandle()) ?: Process.myUserHandle()
+        } else {
+            Process.myUserHandle()
+        }
+        activity.startActivityForResultAsUser(Intent(MediaStore.ACTION_USER_SELECT_IMAGES_FOR_APP)
             .putExtra(Intent.EXTRA_UID, packageInfo.uid)
             .setType(KotlinUtils.getMimeTypeForPermissions(unfilteredAffectedPermissions)),
-            PHOTO_PICKER_REQUEST_CODE)
+            PHOTO_PICKER_REQUEST_CODE, user)
     }
 
     /**
@@ -1436,20 +1422,6 @@ class GrantPermissionsViewModel(
 
     private fun getInstanceStateKey(groupName: String, isBackground: Boolean): String {
         return "${this::class.java.name}_${groupName}_$isBackground"
-    }
-
-    private fun logPhotoPickerInteraction(result: Int) {
-        val foregroundGroupState = groupStates[READ_MEDIA_VISUAL to false] ?: return
-        when (result) {
-            GRANTED_USER_SELECTED -> {
-                reportRequestResult(foregroundGroupState.affectedPermissions,
-                    PERMISSION_GRANT_REQUEST_RESULT_REPORTED__RESULT__PHOTOS_SELECTED)
-            }
-            CANCELED -> {
-                reportRequestResult(foregroundGroupState.affectedPermissions,
-                    PERMISSION_GRANT_REQUEST_RESULT_REPORTED__RESULT__IGNORED)
-            }
-        }
     }
 
     private fun logSettingsInteraction(groupName: String, result: Int) {
